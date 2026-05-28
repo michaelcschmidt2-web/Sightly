@@ -1,0 +1,2350 @@
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import './App.css'
+import type { AuthMode, BetaFeedbackTag, CapabilityId, ContrastDirection, ContrastThresholdPayload, ContrastTrial, CorrectionProfile, EyeFatigueLevel, LastEyeExamRange, PeripheralAwarenessPayload, PeripheralDirection, PeripheralTrial, SharpnessEyeMode, SharpnessRowAttempt, SharpnessThresholdPayload, SnapshotAnalytics, SightlyState, SnapshotReadiness, TestResult, ToolId, VisionCorrectionUsage, VisionTool, VisualChoicePayload, VisualChoiceSymbol, VisualChoiceTrial } from './types'
+import {
+  advancedVisionTools,
+  createCheckFromMeasurements,
+  createStandaloneResult,
+  createDemoState,
+  emptyState,
+  formatMeasurement,
+  loadState,
+  rebuildDerivedState,
+  saveState,
+  visionTools,
+} from './data'
+
+const SIGHTLY_ACTIVE_SESSION_KEY = 'sightly-active-session-v1'
+const SIGHTLY_ONBOARDING_DRAFT_KEY = 'sightly-onboarding-draft-v1'
+const CALIBRATION_REQUIRED_SNAPSHOTS = 3
+const CALIBRATION_MIN_INTERVAL_MS = 12 * 60 * 60 * 1000
+type ActiveRunMode = 'monthly-snapshot' | 'standalone-test'
+type ActiveSession = {
+  activeRunMode: ActiveRunMode
+  activeToolId: ToolId | null
+  testStep: number
+  pendingMeasurements: Partial<Record<ToolId, number>>
+  pendingResultDetails: Partial<Record<ToolId, Partial<TestResult>>>
+  snapshotReadiness: SnapshotReadiness | null
+  showSnapshotPrep: boolean
+}
+
+type OnboardingDraft = {
+  introComplete: boolean
+  step: number
+  profile: OnboardingProfile
+}
+
+function loadActiveSession(): ActiveSession | null {
+  try {
+    const stored = localStorage.getItem(SIGHTLY_ACTIVE_SESSION_KEY)
+    return stored ? JSON.parse(stored) as ActiveSession : null
+  } catch {
+    return null
+  }
+}
+
+function saveActiveSession(session: ActiveSession | null) {
+  try {
+    if (session) localStorage.setItem(SIGHTLY_ACTIVE_SESSION_KEY, JSON.stringify(session))
+    else localStorage.removeItem(SIGHTLY_ACTIVE_SESSION_KEY)
+  } catch {
+    // Recovery is best-effort; completed snapshots remain in primary state storage.
+  }
+}
+
+function loadOnboardingDraft(): OnboardingDraft | null {
+  try {
+    const stored = localStorage.getItem(SIGHTLY_ONBOARDING_DRAFT_KEY)
+    return stored ? JSON.parse(stored) as OnboardingDraft : null
+  } catch {
+    return null
+  }
+}
+
+function saveOnboardingDraft(draft: OnboardingDraft | null) {
+  try {
+    if (draft) localStorage.setItem(SIGHTLY_ONBOARDING_DRAFT_KEY, JSON.stringify(draft))
+    else localStorage.removeItem(SIGHTLY_ONBOARDING_DRAFT_KEY)
+  } catch {
+    // Onboarding can still complete in memory if draft persistence is unavailable.
+  }
+}
+
+const assessmentDesign: Record<ToolId, {
+  title: string
+  measuredBy: string
+  prompt: string
+  options: Array<{ label: string; helper: string; value: number }>
+  visual: string
+}> = {
+  visualSharpness: {
+    title: 'Smallest readable row',
+    measuredBy: 'Minimum readable optotype size. Lower is better.',
+    prompt: 'Type the smallest row that remains crisp, not guessed.',
+    visual: 'E F P T O Z',
+    options: [],
+  },
+  contrastSensitivity: {
+    title: 'Lowest contrast seen',
+    measuredBy: 'Contrast threshold percentage. Lower threshold means stronger contrast sensitivity.',
+    prompt: 'Select the direction of the opening in each ring.',
+    visual: '◌',
+    options: [],
+  },
+  peripheralAwareness: {
+    title: 'Peripheral Awareness',
+    measuredBy: 'Edge stimulus detection while maintaining central focus. Higher is better.',
+    prompt: 'Keep your eyes on the center dot, then answer whether the peripheral cue appeared.',
+    visual: '•',
+    options: [],
+  },
+  visualResponse: {
+    title: 'Recognition Threshold',
+    measuredBy: 'Shortest exposure duration where a directional symbol is recognized reliably. Lower milliseconds are better when accuracy remains high.',
+    prompt: 'Identify the direction that briefly appeared.',
+    visual: '← → ↑ ↓',
+    options: [],
+  },
+}
+
+function App() {
+  const [state, setState] = useState<SightlyState>(() => loadState())
+  const [tab, setTab] = useState<'home' | 'explore' | 'settings' | 'reliability' | 'betaDiagnostics'>('home')
+  const [savedSession, setSavedSession] = useState<ActiveSession | null>(() => loadActiveSession())
+  const [activeRunMode, setActiveRunMode] = useState<ActiveRunMode>('monthly-snapshot')
+  const [activeTool, setActiveTool] = useState<VisionTool | null>(null)
+  const [testStep, setTestStep] = useState(0)
+  const [pendingMeasurements, setPendingMeasurements] = useState<Partial<Record<ToolId, number>>>({})
+  const [pendingResultDetails, setPendingResultDetails] = useState<Partial<Record<ToolId, Partial<TestResult>>>>({})
+  const [snapshotReadiness, setSnapshotReadiness] = useState<SnapshotReadiness | null>(null)
+  const [showSnapshotPrep, setShowSnapshotPrep] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
+  const [testStartedAt, setTestStartedAt] = useState(() => Date.now())
+  const [snapshotResumed, setSnapshotResumed] = useState(false)
+  const [snapshotInterruptions, setSnapshotInterruptions] = useState(0)
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 60_000)
+    return () => window.clearInterval(interval)
+  }, [])
+
+  useEffect(() => {
+    saveState(state)
+  }, [state])
+
+  useEffect(() => {
+    if (savedSession && !activeTool && !showSnapshotPrep) return
+    const session: ActiveSession | null = activeTool || showSnapshotPrep || Object.keys(pendingMeasurements).length
+      ? { activeRunMode, activeToolId: activeTool?.id ?? null, testStep, pendingMeasurements, pendingResultDetails, snapshotReadiness, showSnapshotPrep }
+      : null
+    saveActiveSession(session)
+  }, [activeRunMode, activeTool, testStep, pendingMeasurements, pendingResultDetails, snapshotReadiness, showSnapshotPrep, savedSession])
+
+  const completedChecks = state.checks.length
+  const latestCheck = state.checks.at(-1)
+  const baselineReady = state.baselineCalibration.completedSnapshots >= CALIBRATION_REQUIRED_SNAPSHOTS && Boolean(state.typicalRange)
+  const calibrationInProgress = !baselineReady && completedChecks < CALIBRATION_REQUIRED_SNAPSHOTS
+  const nextCalibrationSnapshotAt = calibrationInProgress && latestCheck
+    ? new Date(new Date(latestCheck.date).getTime() + CALIBRATION_MIN_INTERVAL_MS)
+    : null
+  const calibrationWaitMs = nextCalibrationSnapshotAt ? Math.max(0, nextCalibrationSnapshotAt.getTime() - now) : 0
+  const baselineCtaDisabled = calibrationInProgress && completedChecks > 0 && calibrationWaitMs > 0
+  const nextSnapshotLabel = baselineCtaDisabled ? formatDuration(calibrationWaitMs) : 'Ready now'
+  const typicalRangeLabel = state.typicalRange
+    ? `${state.typicalRange.low}–${state.typicalRange.high}`
+    : 'After 3 snapshots'
+  const greeting = 'Good Evening, Mike'
+
+  const homeStatus = useMemo(() => {
+    if (completedChecks === 0) return { title: 'Learning Your Vision', detail: 'Build your baseline with 3 full snapshots spaced at least 12 hours apart.' }
+    if (completedChecks === 1) return { title: 'Learning Your Vision', detail: '1 of 3 snapshots complete. Snapshot 2 will continue your baseline without interpreting trends yet.' }
+    if (completedChecks === 2) return { title: 'Learning Your Vision', detail: '2 of 3 snapshots complete. Your final baseline snapshot unlocks score, range, history, and trend monitoring.' }
+    return {
+      title: state.baselineCalibration.message,
+      detail: state.baselineCalibration.optionalFourthSnapshotRecommended
+        ? 'Your first 3 snapshots varied more than expected. An optional 4th calibration snapshot can improve consistency.'
+        : 'Your baseline is ready. Sightly can now compare future snapshots against your normal range.',
+    }
+  }, [completedChecks, state.baselineCalibration.message, state.baselineCalibration.optionalFourthSnapshotRecommended])
+
+  useEffect(() => {
+    if (!state.profile.notificationsEnabled || !calibrationInProgress || calibrationWaitMs > 0 || completedChecks === 0) return undefined
+    const reminder = completedChecks === 1 ? 'Snapshot 2 ready' : completedChecks === 2 ? 'Final baseline snapshot ready' : null
+    if (!reminder || state.lastNotification === reminder) return undefined
+    const reminderTimer = window.setTimeout(() => {
+      setState((current) => current.lastNotification === reminder ? current : { ...current, lastNotification: reminder })
+    }, 0)
+    return () => window.clearTimeout(reminderTimer)
+  }, [calibrationInProgress, calibrationWaitMs, completedChecks, state.lastNotification, state.profile.notificationsEnabled])
+
+  function completeOnboarding(profile: {
+    authMode: AuthMode
+    name: string
+    ageRange: string
+    correctionProfile: CorrectionProfile
+    lastEyeExam: LastEyeExamRange
+    usualCorrectionToday: VisionCorrectionUsage
+  }) {
+    setState(() => ({
+      ...emptyState,
+      onboarded: true,
+      profile: {
+        ...emptyState.profile,
+        name: profile.name || 'Friend',
+        authMode: profile.authMode,
+        ageRange: profile.ageRange,
+        correctionProfile: profile.correctionProfile,
+        lastEyeExam: profile.lastEyeExam,
+        usualCorrectionToday: profile.usualCorrectionToday,
+      },
+    }))
+    setShowSnapshotPrep(true)
+  }
+
+  function startCheck() {
+    if (baselineCtaDisabled) return
+    setShowSnapshotPrep(true)
+  }
+
+  function beginSnapshot(readiness: Omit<SnapshotReadiness, 'startedAt' | 'checklistConfirmed'>) {
+    const preparedReadiness: SnapshotReadiness = {
+      ...readiness,
+      checklistConfirmed: true,
+      startedAt: new Date().toISOString(),
+    }
+    setActiveRunMode('monthly-snapshot')
+    setSnapshotReadiness(preparedReadiness)
+    setShowSnapshotPrep(false)
+    setActiveTool(visionTools[0])
+    setTestStep(0)
+    setPendingMeasurements({})
+    setPendingResultDetails({})
+    setTestStartedAt(Date.now())
+    setSnapshotResumed(false)
+    setSnapshotInterruptions(0)
+  }
+
+  function recordMeasurement(value: number, details: Partial<TestResult> = {}) {
+    if (!activeTool) return
+    const fatigueAdjustment = snapshotReadiness?.eyeFatigue === 'veryTired' ? -8 : snapshotReadiness?.eyeFatigue === 'slightlyTired' ? -4 : 0
+    const correctionAdjustment = snapshotReadiness?.visionCorrection === 'none' ? -2 : 0
+    const completedAt = Date.now()
+    const durationMs = completedAt - testStartedAt
+    const contextualDetails: Partial<TestResult> = {
+      ...details,
+      durationMs,
+      retryCount: details.retryCount ?? 0,
+      confidence: Math.max(55, Math.min(99, (details.confidence ?? 94) + fatigueAdjustment + correctionAdjustment)),
+      conditions: {
+        ...captureTestConditions(),
+        ...details.conditions,
+        eyeFatigue: snapshotReadiness?.eyeFatigue ?? 'normal',
+        visionCorrection: snapshotReadiness?.visionCorrection ?? 'notApplicable',
+      },
+    }
+
+    if (activeRunMode === 'standalone-test') {
+      const standalone = createStandaloneResult(activeTool, value, new Date(), contextualDetails)
+      setState((current) => ({
+        ...current,
+        standaloneResults: [...current.standaloneResults, standalone],
+        lastNotification: `${activeTool.title} standalone result saved for reference.`,
+      }))
+      setActiveTool(null)
+      setSnapshotReadiness(null)
+      setPendingMeasurements({})
+      setPendingResultDetails({})
+      setTestStep(0)
+      setTab('explore')
+      setSavedSession(null)
+      return
+    }
+
+    const nextMeasurements = { ...pendingMeasurements, [activeTool.id]: value }
+    const nextDetails = { ...pendingResultDetails, [activeTool.id]: contextualDetails }
+    const currentIndex = visionTools.findIndex((tool) => tool.id === activeTool.id)
+
+    if (currentIndex === -1) {
+      setActiveTool(null)
+      setPendingMeasurements({})
+      setPendingResultDetails({})
+      setTestStep(0)
+      setTab('explore')
+      return
+    }
+
+    const nextIndex = currentIndex + 1
+
+    if (nextIndex >= visionTools.length) {
+      const date = new Date()
+      const perTestDurations = visionTools.reduce((acc, tool) => {
+        const toolDuration = (nextDetails[tool.id] as Partial<TestResult> | undefined)?.durationMs
+        if (typeof toolDuration === 'number') acc[tool.id] = toolDuration
+        return acc
+      }, {} as Partial<Record<ToolId, number>>)
+      const retryFrequency = visionTools.reduce((sum, tool) => sum + ((nextDetails[tool.id] as Partial<TestResult> | undefined)?.retryCount ?? 0), 0)
+      const startedAtMs = snapshotReadiness?.startedAt ? new Date(snapshotReadiness.startedAt).getTime() : date.getTime()
+      const analytics: SnapshotAnalytics = {
+        startedAt: snapshotReadiness?.startedAt ?? date.toISOString(),
+        completedAt: date.toISOString(),
+        totalDurationMs: Math.max(0, date.getTime() - startedAtMs),
+        perTestDurations,
+        abandonedTests: [],
+        resumedSnapshot: snapshotResumed,
+        retryFrequency,
+        interruptionCount: snapshotInterruptions,
+      }
+      const check = createCheckFromMeasurements(nextMeasurements, date, nextDetails, snapshotReadiness, analytics)
+      const nextCompleted = completedChecks + 1
+      const calibrationNotification = nextCompleted <= 3
+        ? `Baseline snapshot ${nextCompleted} of 3 saved${nextCompleted === 1 ? '. Snapshot 2 ready in 12 hours.' : nextCompleted === 2 ? '. Final baseline snapshot ready in 12 hours.' : '. Baseline unlocked.'}`
+        : 'Your Monthly Vision Snapshot is ready.'
+      setState((current) =>
+        rebuildDerivedState({
+          ...current,
+          checks: [...current.checks, check],
+          lastNotification: calibrationNotification,
+        }),
+      )
+      setActiveTool(null)
+      setSnapshotReadiness(null)
+      setPendingMeasurements({})
+      setPendingResultDetails({})
+      setTestStep(0)
+      setTab('home')
+      setSavedSession(null)
+      return
+    }
+
+    setPendingMeasurements(nextMeasurements)
+    setPendingResultDetails(nextDetails)
+    setActiveTool(visionTools[nextIndex])
+    setTestStartedAt(Date.now())
+    setTestStep(nextIndex)
+  }
+
+  function recordBetaFeedback(snapshotId: string, believabilityRating: 1 | 2 | 3 | 4 | 5, comment: string, tags: BetaFeedbackTag[]) {
+    setState((current) => rebuildDerivedState({
+      ...current,
+      betaFeedback: [
+        ...current.betaFeedback.filter((item) => item.snapshotId !== snapshotId),
+        { snapshotId, createdAt: new Date().toISOString(), believabilityRating, comment, tags },
+      ],
+    }))
+  }
+
+  function startToolFromExplore(tool: VisionTool) {
+    setActiveRunMode('standalone-test')
+    setSnapshotReadiness(null)
+    setPendingMeasurements({})
+    setPendingResultDetails({})
+    setTestStep(0)
+    setTestStartedAt(Date.now())
+    setActiveTool(tool)
+  }
+
+  function resumeSavedSession() {
+    if (!savedSession) return
+    setActiveRunMode(savedSession.activeRunMode)
+    setPendingMeasurements(savedSession.pendingMeasurements)
+    setPendingResultDetails(savedSession.pendingResultDetails)
+    setSnapshotReadiness(savedSession.snapshotReadiness)
+    setTestStep(savedSession.testStep)
+    setShowSnapshotPrep(savedSession.showSnapshotPrep)
+    setSnapshotResumed(true)
+    setSnapshotInterruptions((current) => current + 1)
+    setTestStartedAt(Date.now())
+    setActiveTool([...visionTools, ...advancedVisionTools].find((tool) => tool.id === savedSession.activeToolId) ?? null)
+    setSavedSession(null)
+  }
+
+  function discardSavedSession() {
+    saveActiveSession(null)
+    setSavedSession(null)
+    setActiveTool(null)
+    setSnapshotReadiness(null)
+    setPendingMeasurements({})
+    setPendingResultDetails({})
+    setShowSnapshotPrep(false)
+    setTestStep(0)
+  }
+
+  function resetToFreshBaseline() {
+    setState({ ...emptyState, onboarded: true })
+    setTab('home')
+  }
+
+  function restoreDemo() {
+    setState(createDemoState())
+    setTab('home')
+  }
+
+  if (!state.onboarded) {
+    return <FirstRunOnboarding onComplete={completeOnboarding} />
+  }
+
+  if (savedSession && !activeTool && !showSnapshotPrep) {
+    return <RecoveryScreen onContinue={resumeSavedSession} onDiscard={discardSavedSession} />
+  }
+
+  return (
+    <main className="app-shell">
+      <div className="ambient ambient-a" />
+      <div className="ambient ambient-b" />
+      <section className="phone-frame">
+        {showSnapshotPrep ? (
+          <SnapshotReadinessScreen onBegin={beginSnapshot} onCancel={() => setShowSnapshotPrep(false)} />
+        ) : activeTool ? (
+          <VisionTest
+            step={testStep}
+            total={activeRunMode === 'monthly-snapshot' ? visionTools.length : 1}
+            tool={activeTool}
+            onRecord={recordMeasurement}
+            onCancel={() => { setActiveTool(null); setPendingMeasurements({}); setPendingResultDetails({}); setSavedSession(null) }}
+          />
+        ) : (
+          <>
+            {tab === 'home' && (
+              <HomeScreen
+                baselineCtaDisabled={baselineCtaDisabled}
+                baselineReady={baselineReady}
+                calibration={state.baselineCalibration}
+                completedChecks={completedChecks}
+                greeting={greeting}
+                homeStatus={homeStatus}
+                latestCheck={latestCheck}
+                onFeedback={recordBetaFeedback}
+                existingFeedback={state.betaFeedback.find((item) => item.snapshotId === latestCheck?.id)}
+                nextSnapshotLabel={nextSnapshotLabel}
+                snapshots={state.snapshots}
+                startCheck={startCheck}
+                typicalRangeLabel={typicalRangeLabel}
+              />
+            )}
+            {tab === 'explore' && <ExploreScreen checks={state.checks} startTool={startToolFromExplore} />}
+            {tab === 'settings' && (
+              <SettingsScreen
+                state={state}
+                restoreDemo={restoreDemo}
+                resetToFreshBaseline={resetToFreshBaseline}
+                openReliability={() => setTab('reliability')}
+                openBetaDiagnostics={() => setTab('betaDiagnostics')}
+                toggleNotifications={() =>
+                  setState((current) => ({
+                    ...current,
+                    profile: { ...current.profile, notificationsEnabled: !current.profile.notificationsEnabled },
+                  }))
+                }
+              />
+            )}
+            {tab === 'reliability' && <ReliabilityDashboard state={state} onBack={() => setTab('settings')} />}
+            {tab === 'betaDiagnostics' && <BetaDiagnosticsScreen state={state} onBack={() => setTab('settings')} />}
+            <BottomNav tab={tab === 'betaDiagnostics' ? 'settings' : tab} setTab={setTab} />
+          </>
+        )}
+      </section>
+    </main>
+  )
+}
+
+
+type OnboardingProfile = {
+  authMode: AuthMode
+  name: string
+  ageRange: string
+  correctionProfile: CorrectionProfile
+  lastEyeExam: LastEyeExamRange
+  usualCorrectionToday: VisionCorrectionUsage
+}
+
+function RecoveryScreen({ onContinue, onDiscard }: { onContinue: () => void; onDiscard: () => void }) {
+  return (
+    <main className="app-shell welcome-shell onboarding-shell">
+      <div className="ambient ambient-a" />
+      <div className="ambient ambient-b" />
+      <section className="phone-frame onboarding-frame">
+        <div className="screen onboarding-screen baseline-step">
+          <p className="eyebrow">Interrupted Snapshot</p>
+          <h1>Resume Snapshot?</h1>
+          <p className="onboarding-subtitle">Sightly saved your active snapshot state so you do not silently lose progress after refresh or reopen.</p>
+          <button className="glass-button primary setup-next" onClick={onContinue}>Continue</button>
+          <button className="glass-button quiet setup-next" onClick={onDiscard}>Discard</button>
+        </div>
+      </section>
+    </main>
+  )
+}
+
+const ageRangeOptions = ['Under 18', '18–29', '30–44', '45–59', '60+']
+const correctionProfileOptions: Array<{ value: CorrectionProfile; label: string }> = [
+  { value: 'glasses', label: 'Glasses' },
+  { value: 'contacts', label: 'Contacts' },
+  { value: 'both', label: 'Both' },
+  { value: 'none', label: 'No' },
+]
+const lastExamOptions: Array<{ value: LastEyeExamRange; label: string }> = [
+  { value: 'within6Months', label: 'Within 6 months' },
+  { value: 'sixToTwelveMonths', label: '6–12 months' },
+  { value: 'oneToTwoYears', label: '1–2 years' },
+  { value: 'overTwoYears', label: 'Over 2 years' },
+  { value: 'unknown', label: 'I don’t remember' },
+]
+
+const introSlides = [
+  {
+    eyebrow: 'Sightly',
+    title: 'See what eyes miss.',
+    body: 'Track your vision over time with simple monthly snapshots.',
+    visual: 'orb',
+  },
+  {
+    eyebrow: 'Build Your Baseline',
+    title: 'Learn your normal range.',
+    body: 'Your first few snapshots help Sightly learn your normal visual range. Future snapshots are compared against you — not everyone else.',
+    visual: 'nodes',
+  },
+  {
+    eyebrow: 'Track Changes Over Time',
+    title: 'Notice the gradual shifts.',
+    body: 'Sightly helps you notice gradual changes you may not realize are happening.',
+    visual: 'journey',
+  },
+  {
+    eyebrow: 'Consistency Matters',
+    title: 'Keep conditions steady.',
+    body: 'Testing under similar conditions improves reliability and helps Sightly produce more meaningful results over time.',
+    note: 'Sightly tracks visual performance trends and does not replace professional eye care.',
+    visual: 'consistency',
+  },
+]
+
+function IntroVisual({ type }: { type: string }) {
+  if (type === 'nodes') {
+    return (
+      <div className="intro-visual intro-nodes" aria-hidden="true">
+        <span className="snapshot-node node-a" />
+        <span className="snapshot-node node-b" />
+        <span className="snapshot-node node-c" />
+        <span className="node-connection connection-a" />
+        <span className="node-connection connection-b" />
+      </div>
+    )
+  }
+
+  if (type === 'journey') {
+    return (
+      <div className="intro-visual intro-journey" aria-hidden="true">
+        {['Baseline', 'New Glasses', 'Current Vision'].map((label, index) => (
+          <div className="journey-marker" key={label} style={{ '--delay': `${index * 0.16}s` } as CSSProperties}>
+            <span />
+            <strong>{label}</strong>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  if (type === 'consistency') {
+    return (
+      <div className="intro-visual intro-consistency" aria-hidden="true">
+        <div className="phone-brightness"><span className="brightness-sheen" /></div>
+        <div className="floating-snapshot-card card-one">Snapshot</div>
+        <div className="floating-snapshot-card card-two">Stable light</div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="intro-visual intro-orb-wrap" aria-hidden="true">
+      <div className="intro-orb"><span /></div>
+    </div>
+  )
+}
+
+function SightlyIntroExperience({ onBeginSetup }: { onBeginSetup: () => void }) {
+  const [introStep, setIntroStep] = useState(0)
+  const isWelcomeStep = introStep === introSlides.length
+  const slide = introSlides[Math.min(introStep, introSlides.length - 1)]
+
+  if (isWelcomeStep) {
+    return (
+      <main className="app-shell welcome-shell onboarding-shell intro-shell">
+        <div className="ambient ambient-a" />
+        <div className="ambient ambient-b" />
+        <section className="phone-frame onboarding-frame intro-frame">
+          <div className="screen intro-screen intro-welcome-screen">
+            <IntroVisual type="orb" />
+            <div className="intro-copy welcome-intro-copy">
+              <p className="eyebrow">Welcome to Sightly</p>
+              <h1>Welcome to Sightly</h1>
+              <p className="onboarding-subtitle">Set up your profile, then begin your first calm baseline snapshot.</p>
+            </div>
+            <button className="glass-button primary setup-next intro-next" onClick={onBeginSetup}>Begin Setup</button>
+          </div>
+        </section>
+      </main>
+    )
+  }
+
+  return (
+    <main className="app-shell welcome-shell onboarding-shell intro-shell">
+      <div className="ambient ambient-a" />
+      <div className="ambient ambient-b" />
+      <section className="phone-frame onboarding-frame intro-frame">
+        <div className="screen intro-screen" key={slide.title}>
+          <div className="intro-topline">
+            <span>{introStep + 1} / {introSlides.length}</span>
+          </div>
+          <IntroVisual type={slide.visual} />
+          <div className="intro-copy">
+            <p className="eyebrow">{slide.eyebrow}</p>
+            <h1>{slide.title}</h1>
+            <p className="onboarding-subtitle">{slide.body}</p>
+            {slide.note && <p className="intro-note">{slide.note}</p>}
+          </div>
+          <div className="intro-progress" aria-label="Intro progress">
+            {introSlides.map((item, index) => <span className={index === introStep ? 'active' : ''} key={item.title} />)}
+          </div>
+          <button className="glass-button primary setup-next intro-next" onClick={() => setIntroStep((current) => current + 1)}>
+            Continue
+          </button>
+        </div>
+      </section>
+    </main>
+  )
+}
+
+function FirstRunOnboarding({ onComplete }: { onComplete: (profile: OnboardingProfile) => void }) {
+  const draft = loadOnboardingDraft()
+  const [introComplete, setIntroComplete] = useState(() => draft?.introComplete ?? false)
+  const [step, setStep] = useState(() => draft?.step ?? 0)
+  const [profile, setProfile] = useState<OnboardingProfile>(() => draft?.profile ?? {
+    authMode: 'guest',
+    name: '',
+    ageRange: '30–44',
+    correctionProfile: 'glasses',
+    lastEyeExam: 'unknown',
+    usualCorrectionToday: 'glasses',
+  })
+
+  useEffect(() => {
+    saveOnboardingDraft({ introComplete, step, profile })
+  }, [introComplete, step, profile])
+
+  const updateProfile = (patch: Partial<OnboardingProfile>) => setProfile((current) => ({ ...current, ...patch }))
+  const next = () => setStep((current) => Math.min(current + 1, 4))
+  const completeSetup = () => {
+    saveOnboardingDraft(null)
+    onComplete(profile)
+  }
+
+  if (!introComplete) {
+    return <SightlyIntroExperience onBeginSetup={() => setIntroComplete(true)} />
+  }
+
+  return (
+    <main className="app-shell welcome-shell onboarding-shell">
+      <div className="ambient ambient-a" />
+      <div className="ambient ambient-b" />
+      <section className="phone-frame onboarding-frame">
+        {step === 0 && (
+          <div className="screen onboarding-screen welcome-step">
+            <div className="onboarding-orb" aria-hidden="true" />
+            <p className="eyebrow">Sightly</p>
+            <h1>See what eyes miss.</h1>
+            <p className="onboarding-subtitle">Track your vision over time with simple monthly snapshots.</p>
+            <div className="onboarding-actions">
+              <button className="glass-button primary" onClick={() => { updateProfile({ authMode: 'apple' }); next() }}>Continue with Apple</button>
+              <button className="glass-button" onClick={() => { updateProfile({ authMode: 'google' }); next() }}>Continue with Google</button>
+              <button className="glass-button" onClick={() => { updateProfile({ authMode: 'email' }); next() }}>Continue with Email</button>
+              <button className="text-button centered" onClick={() => { updateProfile({ authMode: 'guest' }); next() }}>Continue as Guest</button>
+            </div>
+            <p className="disclaimer">Sightly tracks visual performance over time and does not replace a professional eye exam.</p>
+          </div>
+        )}
+
+        {step === 1 && (
+          <div className="screen onboarding-screen profile-step">
+            <p className="eyebrow">Basic Profile</p>
+            <h1>A few details.</h1>
+            <label className="soft-field">First name<input autoComplete="given-name" enterKeyHint="next" value={profile.name} onChange={(event) => updateProfile({ name: event.target.value })} onFocus={(event) => event.currentTarget.scrollIntoView({ block: 'center' })} placeholder="First name" /></label>
+            <div className="onboarding-group">
+              <p>Age range</p>
+              <div className="choice-grid setup-grid">
+                {ageRangeOptions.map((ageRange) => <button className={profile.ageRange === ageRange ? 'selected' : ''} key={ageRange} onClick={() => updateProfile({ ageRange })}>{ageRange}</button>)}
+              </div>
+            </div>
+            <div className="onboarding-group">
+              <p>Do you currently wear glasses or contacts?</p>
+              <div className="choice-grid setup-grid">
+                {correctionProfileOptions.map((option) => <button className={profile.correctionProfile === option.value ? 'selected' : ''} key={option.value} onClick={() => updateProfile({ correctionProfile: option.value })}>{option.label}</button>)}
+              </div>
+            </div>
+            <button className="glass-button primary setup-next" onClick={next}>Continue</button>
+          </div>
+        )}
+
+        {step === 2 && (
+          <div className="screen onboarding-screen profile-step">
+            <p className="eyebrow">Eye Care Context</p>
+            <h1>Last eye exam?</h1>
+            <div className="choice-list setup-list">
+              {lastExamOptions.map((option) => <button className={profile.lastEyeExam === option.value ? 'selected' : ''} key={option.value} onClick={() => updateProfile({ lastEyeExam: option.value })}>{option.label}</button>)}
+            </div>
+            <div className="setup-note glass-card">
+              <h2>Are you wearing your usual vision correction today?</h2>
+              <p>For the most useful baseline, take snapshots under similar conditions each time.</p>
+              <div className="choice-grid setup-grid">
+                {correctionOptions.map((option) => <button className={profile.usualCorrectionToday === option.value ? 'selected' : ''} key={option.value} onClick={() => updateProfile({ usualCorrectionToday: option.value })}>{option.label}</button>)}
+              </div>
+            </div>
+            <button className="glass-button primary setup-next" onClick={next}>Continue</button>
+          </div>
+        )}
+
+        {step === 3 && (
+          <div className="screen onboarding-screen baseline-step">
+            <p className="eyebrow">Build Your Baseline</p>
+            <h1>Learn your normal range.</h1>
+            <p className="onboarding-subtitle">Your first 3 snapshots teach Sightly your normal range so later changes are easier to read.</p>
+            <p>Take each baseline snapshot at least 12 hours apart. During calibration, Sightly shows progress only — trend context appears after your baseline is ready.</p>
+            <div className="baseline-pill glass-card"><span>Snapshot 1 of 3</span><strong>Baseline Starting</strong></div>
+            <button className="glass-button primary setup-next" onClick={next}>Start First Snapshot</button>
+          </div>
+        )}
+
+        {step === 4 && (
+          <div className="screen onboarding-screen baseline-step">
+            <p className="eyebrow">Ready</p>
+            <h1>Begin with calm conditions.</h1>
+            <div className="readiness-list onboarding-readiness">
+              {readinessChecklist.map((item) => <div key={item}><span>✓</span>{item}</div>)}
+            </div>
+            <button className="glass-button primary setup-next" onClick={completeSetup}>Begin Snapshot</button>
+            <p className="disclaimer">Your Vision Score unlocks after 3 snapshots.</p>
+          </div>
+        )}
+      </section>
+    </main>
+  )
+}
+
+const readinessChecklist = [
+  'Test in a well-lit room',
+  'Wear your usual glasses or contacts',
+  'Hold your device at a comfortable distance',
+  'Increase screen brightness',
+  'Avoid testing when your eyes feel unusually tired',
+  'Complete the test without interruptions',
+]
+
+const fatigueOptions: Array<{ value: EyeFatigueLevel; label: string }> = [
+  { value: 'great', label: 'Great' },
+  { value: 'normal', label: 'Normal' },
+  { value: 'slightlyTired', label: 'Slightly Tired' },
+  { value: 'veryTired', label: 'Very Tired' },
+]
+
+const correctionOptions: Array<{ value: VisionCorrectionUsage; label: string }> = [
+  { value: 'glasses', label: 'Glasses' },
+  { value: 'contacts', label: 'Contacts' },
+  { value: 'none', label: 'None' },
+  { value: 'notApplicable', label: 'Not Applicable' },
+]
+
+function SnapshotReadinessScreen({
+  onBegin,
+  onCancel,
+}: {
+  onBegin: (readiness: Omit<SnapshotReadiness, 'startedAt' | 'checklistConfirmed'>) => void
+  onCancel: () => void
+}) {
+  const [eyeFatigue, setEyeFatigue] = useState<EyeFatigueLevel>('normal')
+  const [visionCorrection, setVisionCorrection] = useState<VisionCorrectionUsage>('notApplicable')
+
+  return (
+    <div className="screen snapshot-prep-screen">
+      <button className="text-button" onClick={onCancel}>Cancel</button>
+      <header className="top-header compact">
+        <p className="small-muted">Monthly Vision Snapshot</p>
+        <h1>Prepare your conditions.</h1>
+      </header>
+
+      <section className="prep-card glass-card">
+        <h2>Use similar conditions each month for the most consistent results.</h2>
+        <div className="readiness-list" aria-label="Snapshot readiness checklist">
+          {readinessChecklist.map((item) => (
+            <div key={item}><span>✓</span>{item}</div>
+          ))}
+        </div>
+      </section>
+
+      <button className="glass-button check-button reference-check begin-snapshot" onClick={() => onBegin({ eyeFatigue, visionCorrection })}>
+        <span className="check-icon">⌾</span>
+        <strong>Begin Snapshot</strong>
+        <span className="chevron">›</span>
+      </button>
+
+      <section className="prep-card glass-card prep-questions">
+        <fieldset>
+          <legend>How are your eyes feeling today?</legend>
+          <div className="choice-grid">
+            {fatigueOptions.map((option) => (
+              <button
+                className={eyeFatigue === option.value ? 'selected' : ''}
+                key={option.value}
+                onClick={() => setEyeFatigue(option.value)}
+                type="button"
+              >
+                <span>{eyeFatigue === option.value ? '●' : '○'}</span>{option.label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>Are you wearing your usual vision correction?</legend>
+          <div className="choice-grid">
+            {correctionOptions.map((option) => (
+              <button
+                className={visionCorrection === option.value ? 'selected' : ''}
+                key={option.value}
+                onClick={() => setVisionCorrection(option.value)}
+                type="button"
+              >
+                <span>{visionCorrection === option.value ? '●' : '○'}</span>{option.label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
+      </section>
+
+      <section className="prep-confidence glass-card">
+        <div>
+          <p className="eyebrow">Measurement Confidence</p>
+          <h2>Tracked with every snapshot</h2>
+        </div>
+        <strong>98%</strong>
+        <p>Brightness, device model, screen size, orientation, time of day, battery saver, eye fatigue, and correction usage are stored for trend analysis.</p>
+      </section>
+    </div>
+  )
+}
+
+function HomeScreen({
+  baselineCtaDisabled,
+  baselineReady,
+  calibration,
+  completedChecks,
+  greeting,
+  homeStatus,
+  latestCheck,
+  onFeedback,
+  existingFeedback,
+  nextSnapshotLabel,
+  snapshots,
+  startCheck,
+  typicalRangeLabel,
+}: {
+  baselineCtaDisabled: boolean
+  baselineReady: boolean
+  calibration: SightlyState['baselineCalibration']
+  completedChecks: number
+  greeting: string
+  homeStatus: { title: string; detail: string }
+  latestCheck: SightlyState['checks'][number] | undefined
+  onFeedback: (snapshotId: string, believabilityRating: 1 | 2 | 3 | 4 | 5, comment: string, tags: BetaFeedbackTag[]) => void
+  existingFeedback: SightlyState['betaFeedback'][number] | undefined
+  nextSnapshotLabel: string
+  snapshots: SightlyState['snapshots']
+  startCheck: () => void
+  typicalRangeLabel: string
+}) {
+  const latestScore = baselineReady ? latestCheck?.score ?? null : null
+  const latestSnapshot = snapshots.at(-1)
+  const scoreClass = baselineReady && (latestSnapshot?.interpretationLevel === 'single-below-range' || latestSnapshot?.interpretationLevel === 'consecutive-below-range' || latestSnapshot?.interpretationLevel === 'trend-detected')
+    ? 'below'
+    : baselineReady && latestSnapshot?.interpretationLevel === 'above-range'
+      ? 'above'
+      : 'within'
+  const latestSnapshots = snapshots.slice(-3)
+  const currentVisionStatus = !baselineReady
+    ? baselineStepLabel(completedChecks)
+    : scoreClass === 'below'
+      ? 'Below Typical Range'
+      : scoreClass === 'above'
+        ? 'Above Typical Range'
+        : 'Within Typical Range'
+  const storyTitle = scoreClass === 'below' ? 'Vision Insight' : 'Vision Story'
+  const primaryChange = latestCheck?.explanation?.contributions.find((item) => item.points !== 0)
+
+  return (
+    <div className="screen home-screen liquid-home">
+      <div className="ios-status" aria-hidden="true">
+        <span>9:41</span>
+        <div className="dynamic-island" />
+        <span className="status-glyphs">▮▮▮ ϟ ▰</span>
+      </div>
+
+      <header className="home-hero-header">
+        <div>
+          <p>Good Evening,</p>
+          <h1>{greeting.replace('Good Evening, ', '')}</h1>
+        </div>
+        <button className="profile-bubble" aria-label="Profile">
+          <span />
+        </button>
+      </header>
+
+      <section className={`current-vision-panel ${scoreClass}`} aria-label="Current Vision">
+        <p className="current-vision-kicker">{baselineReady ? 'Current Vision' : 'Learning Your Vision'}</p>
+        <strong>{latestScore ?? (baselineReady ? '—' : `${Math.min(completedChecks, 3)} of 3`)}</strong>
+        <h2>{currentVisionStatus}</h2>
+        <p className="current-vision-range">{baselineReady ? `Typical Range · ${typicalRangeLabel}` : 'Baseline Progress'}</p>
+      </section>
+
+      <section className="vision-story-section" aria-label="Vision Story">
+        <p className="section-kicker">{storyTitle}</p>
+        <h2>{homeStatus.title}</h2>
+        <p>{homeStatus.detail}</p>
+        {scoreClass === 'below' && <p className="quiet-recommendation">Retest in 7 days to confirm.</p>}
+      </section>
+
+      {latestCheck && <BetaFeedbackCard snapshotId={latestCheck.id} existingFeedback={existingFeedback} onSubmit={onFeedback} />}
+
+      {!baselineReady && (
+        <section className="baseline-progress-section" aria-label="Baseline calibration progress">
+          <div>
+            <p className="section-kicker">Build Your Baseline</p>
+            <h2>{Math.min(completedChecks, CALIBRATION_REQUIRED_SNAPSHOTS)} of 3 snapshots complete</h2>
+            <p>Your first few snapshots help Sightly learn your normal visual range so future changes can be measured more accurately.</p>
+          </div>
+          <div className="next-snapshot-card glass-card">
+            <span>Next Snapshot Available In:</span>
+            <strong>{nextSnapshotLabel}</strong>
+          </div>
+        </section>
+      )}
+
+      {baselineReady && (
+        <section className="baseline-progress-section baseline-complete-section" aria-label="Baseline established">
+          <div>
+            <p className="section-kicker">Baseline Calibration</p>
+            <h2>{calibration.message}</h2>
+            <p>{calibration.consistency === 'high' ? 'Your first 3 snapshots were highly consistent.' : 'Additional calibration may improve accuracy.'}</p>
+          </div>
+          <div className="baseline-metrics-grid">
+            <Metric label="Average" value={calibration.average ?? '—'} />
+            <Metric label="Variance" value={calibration.variance ?? '—'} />
+            <Metric label="Repeatability" value={calibration.repeatability ?? '—'} />
+            <Metric label="Confidence" value={`${calibration.confidence}%`} />
+          </div>
+          {calibration.optionalFourthSnapshotRecommended && (
+            <button className="glass-button quiet optional-calibration-button" onClick={startCheck}>Take Optional Calibration Snapshot</button>
+          )}
+        </section>
+      )}
+
+      {baselineReady && completedChecks > CALIBRATION_REQUIRED_SNAPSHOTS && latestCheck?.explanation && (
+        <section className="what-changed-section" aria-label="What changed and why">
+          <div>
+            <p className="section-kicker">What Changed</p>
+            <h2>{primaryChange ? primaryChange.label.replace('Visual ', '') : 'No major component shift'}</h2>
+          </div>
+          <p>{latestCheck.explanation.summary}</p>
+          <div className="quiet-contribution-list">
+            {latestCheck.explanation.contributions.filter((item) => item.points !== 0).slice(0, 2).map((item) => (
+              <div className={`quiet-contribution-row ${item.status}`} key={item.capability}>
+                <span>{item.label.replace('Visual ', '')}</span>
+                <b>{item.points > 0 ? '+' : ''}{item.points} pts</b>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <button className="glass-button check-button reference-check quiet-check" disabled={baselineCtaDisabled} onClick={startCheck}>
+        <strong>{baselineReady ? (calibration.optionalFourthSnapshotRecommended ? 'Take Optional Calibration Snapshot' : 'Check My Vision') : completedChecks === 0 ? 'Start First Snapshot' : 'Continue Baseline'}</strong>
+      </button>
+
+      {!baselineReady && latestCheck && (
+        <section className="early-results-section" aria-label="Early Results">
+          <p className="section-kicker">Early Results</p>
+          <h2>Snapshot {completedChecks} of 3 complete.</h2>
+          <p>Complete {Math.max(0, 3 - completedChecks)} more snapshot{3 - completedChecks === 1 ? '' : 's'} to unlock your Vision Score and Typical Range.</p>
+          <div className="early-result-list">
+            {latestCheck.testResults.filter((result) => result.capability !== 'visualResponse').map((result) => (
+              <div key={result.id}><span>{result.metricLabel}</span><b>{formatMeasurement(result)}</b></div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {baselineReady && (
+        <section className="supporting-details-section" aria-label="Supporting Details">
+        <div className="simple-section-heading">
+          <p className="section-kicker">Supporting Details</p>
+          <h2>Vision History</h2>
+        </div>
+        <div className="memory-card-strip">
+          {latestSnapshots.map((snapshot, index) => {
+            const current = index === latestSnapshots.length - 1
+            const status = current && scoreClass === 'below' ? 'Below Baseline' : 'In Range'
+            return (
+              <button className={`memory-card ${current ? 'current' : ''}`} key={snapshot.id}>
+                <span>{snapshot.monthLabel.split(' ')[0]}</span>
+                <strong>{snapshot.score ?? '—'}</strong>
+                <small>{status}</small>
+              </button>
+            )
+          })}
+        </div>
+
+        <div className="vision-events-list" aria-label="Vision Events">
+          <div className="vision-event-row"><span>👓</span><p>New Prescription</p></div>
+          <div className="vision-event-row"><span>🏥</span><p>Eye Exam</p></div>
+          <div className="vision-event-row"><span>⚠️</span><p>Eye Injury</p></div>
+        </div>
+        </section>
+      )}
+    </div>
+  )
+}
+
+function BetaFeedbackCard({
+  snapshotId,
+  existingFeedback,
+  onSubmit,
+}: {
+  snapshotId?: string
+  existingFeedback?: SightlyState['betaFeedback'][number]
+  onSubmit?: (snapshotId: string, believabilityRating: 1 | 2 | 3 | 4 | 5, comment: string, tags: BetaFeedbackTag[]) => void
+}) {
+  const [rating, setRating] = useState<1 | 2 | 3 | 4 | 5 | null>(existingFeedback?.believabilityRating ?? null)
+  const [comment, setComment] = useState(existingFeedback?.comment ?? '')
+  const [tags, setTags] = useState<BetaFeedbackTag[]>(existingFeedback?.tags ?? [])
+  const [saved, setSaved] = useState(Boolean(existingFeedback))
+  const options: Array<{ value: BetaFeedbackTag; label: string }> = [
+    { value: 'consistent', label: 'consistent' },
+    { value: 'surprising', label: 'surprising' },
+    { value: 'inaccurate', label: 'inaccurate' },
+    { value: 'difficult-to-complete', label: 'difficult to complete' },
+  ]
+  const toggleTag = (value: BetaFeedbackTag) => setTags((current) => current.includes(value) ? current.filter((item) => item !== value) : [...current, value])
+  const saveFeedback = () => {
+    if (!snapshotId || !rating || !onSubmit) return
+    onSubmit(snapshotId, rating, comment.trim(), tags)
+    setSaved(true)
+  }
+
+  return (
+    <section className="beta-feedback-card glass-card" aria-label="Beta tester feedback">
+      <div>
+        <p className="section-kicker">Beta Feedback</p>
+        <h2>Was this result believable?</h2>
+        <p>Stored locally on this device for beta validation.</p>
+      </div>
+      <div className="beta-rating-row" aria-label="Believability rating from 1 to 5">
+        {[1, 2, 3, 4, 5].map((value) => (
+          <button
+            aria-pressed={rating === value}
+            className={rating === value ? 'selected' : ''}
+            key={value}
+            onClick={() => { setRating(value as 1 | 2 | 3 | 4 | 5); setSaved(false) }}
+            type="button"
+          >
+            {value}
+          </button>
+        ))}
+      </div>
+      <label className="beta-feedback-field">
+        <span>Optional feedback</span>
+        <textarea value={comment} onChange={(event) => { setComment(event.target.value); setSaved(false) }} placeholder="What felt inaccurate or confusing?" rows={3} />
+      </label>
+      <div className="beta-feedback-tags" aria-label="Result feeling tags">
+        {options.map((option) => (
+          <button className={tags.includes(option.value) ? 'selected' : ''} key={option.value} onClick={() => { toggleTag(option.value); setSaved(false) }} type="button">
+            {option.label}
+          </button>
+        ))}
+      </div>
+      {snapshotId && onSubmit && (
+        <button className="glass-button quiet beta-save-button" disabled={!rating} onClick={saveFeedback}>Save Beta Feedback</button>
+      )}
+      {saved && <p className="feedback-saved-note">Saved locally for beta review.</p>}
+    </section>
+  )
+}
+
+function ExploreScreen({ checks, startTool }: { checks: SightlyState['checks']; startTool: (tool: VisionTool) => void }) {
+  return (
+    <div className="screen explore-screen">
+      <header className="top-header compact">
+        <p className="small-muted">Explore</p>
+        <h1>Assessments</h1>
+      </header>
+      <div className="tool-grid">
+        {visionTools.map((tool) => {
+          const history = checks.flatMap((check) => check.testResults).filter((result) => result.toolId === tool.id)
+          const last = history.at(-1)
+          return (
+            <button className="tool-card glass-card" key={tool.id} onClick={() => startTool(tool)}>
+              <div className="tool-icon">{iconFor(tool.capability)}</div>
+              <div>
+                <h2>{tool.title}</h2>
+                <p>{tool.description}</p>
+                <dl>
+                  <div><dt>Measures</dt><dd>{tool.metricLabel}</dd></div>
+                  <div><dt>Last Result</dt><dd>{last ? `${formatMeasurement(last)} · ${last.normalizedScore}` : tool.lastResultLabel}</dd></div>
+                </dl>
+              </div>
+            </button>
+          )
+        })}
+      </div>
+      <section className="advanced-tests-section" aria-label="Advanced Tests">
+        <p className="section-kicker">Advanced Tests</p>
+        <h2>Not included in Vision Score</h2>
+        <p>Recognition Threshold, Color Vision (Ishihara), Amsler Grid, Astigmatism Screening, and future visual-processing assessments live here instead of the monthly score.</p>
+        <div className="tool-grid advanced-tool-grid">
+          {advancedVisionTools.map((tool) => (
+            <button className="tool-card glass-card advanced-tool-card" key={tool.id} onClick={() => startTool(tool)}>
+              <div className="tool-icon">{iconFor(tool.capability)}</div>
+              <div>
+                <h2>{tool.title}</h2>
+                <p>{tool.description}</p>
+                <dl>
+                  <div><dt>Category</dt><dd>Advanced Tests</dd></div>
+                  <div><dt>Score Impact</dt><dd>Not scored</dd></div>
+                </dl>
+              </div>
+            </button>
+          ))}
+        </div>
+      </section>
+      <BetaFeedbackCard />
+    </div>
+  )
+}
+
+function SettingsScreen({
+  state,
+  toggleNotifications,
+  resetToFreshBaseline,
+  restoreDemo,
+  openReliability,
+  openBetaDiagnostics,
+}: {
+  state: SightlyState
+  toggleNotifications: () => void
+  resetToFreshBaseline: () => void
+  restoreDemo: () => void
+  openReliability: () => void
+  openBetaDiagnostics: () => void
+}) {
+  const logoPressTimer = useRef<ReturnType<typeof window.setTimeout> | null>(null)
+  const clearLogoPressTimer = () => {
+    if (logoPressTimer.current) window.clearTimeout(logoPressTimer.current)
+    logoPressTimer.current = null
+  }
+  const rows = [
+    ['Profile', state.profile.name],
+    ['Notifications', state.profile.notificationsEnabled ? 'On' : 'Off'],
+    ['Accessibility', state.profile.reduceMotion ? 'Reduce Motion' : 'Standard'],
+    ['Privacy', 'Local on this device'],
+    ['Score Formula', '60 / 30 / 10'],
+    ['About Sightly', 'See what eyes miss.'],
+  ]
+
+  return (
+    <div className="screen settings-screen">
+      <header className="top-header compact">
+        <p className="small-muted">Settings</p>
+        <h1
+          onPointerDown={() => { logoPressTimer.current = window.setTimeout(openBetaDiagnostics, 900) }}
+          onPointerLeave={clearLogoPressTimer}
+          onPointerUp={clearLogoPressTimer}
+        >Sightly</h1>
+      </header>
+      <section className="settings-list glass-card">
+        {rows.map(([label, value]) => (
+          <button key={label} onClick={label === 'Notifications' ? toggleNotifications : label === 'Score Formula' ? openReliability : undefined}>
+            <span>{label}</span>
+            <strong>{value}</strong>
+          </button>
+        ))}
+      </section>
+      <section className="vision-profile-card glass-card" aria-label="Vision Profile">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Vision Profile</p>
+            <h2>Informational screens</h2>
+          </div>
+          <span>Not scored</span>
+        </div>
+        <p className="profile-note">These checks describe your visual profile, but they do not affect monthly Vision Score calculations.</p>
+        <div className="profile-grid">
+          {state.visionProfile.map((item) => (
+            <article key={item.id} className="profile-item">
+              <strong>{item.label}</strong>
+              <span>{item.result}</span>
+              <p>{item.description}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+      {state.annualSummary && (
+        <section className="summary-card glass-card">
+          <p className="eyebrow">{state.annualSummary.year} Vision Summary</p>
+          <div className="summary-grid">
+            <Metric label="Average Score" value={state.annualSummary.averageScore} />
+            <Metric label="Checks Completed" value={state.annualSummary.checksCompleted} />
+            <Metric label="Typical Range" value={`${state.annualSummary.typicalRange.low}–${state.annualSummary.typicalRange.high}`} />
+            <Metric label="Sharpness Typical" value={state.annualSummary.typicalRange.capabilityScores.sharpness} />
+            <Metric label="Peripheral Typical" value={state.annualSummary.typicalRange.capabilityScores.peripheralAwareness} />
+            <Metric label="Contrast Typical" value={state.annualSummary.typicalRange.capabilityScores.contrast} />
+          </div>
+          <p>{state.annualSummary.notification}</p>
+        </section>
+      )}
+      <div className="settings-actions">
+        <button className="glass-button" onClick={restoreDemo}>Restore Demo Baseline</button>
+        <button className="glass-button quiet" onClick={resetToFreshBaseline}>Reset to Fresh Baseline</button>
+      </div>
+    </div>
+  )
+}
+
+function BetaDiagnosticsScreen({ state, onBack }: { state: SightlyState; onBack: () => void }) {
+  const checks = state.checks.slice().reverse()
+  const metricRows: Array<[string, string | number]> = [
+    ['Calibration completion', `${state.betaSuccessMetrics.calibrationCompletionRate}%`],
+    ['Monthly return', `${state.betaSuccessMetrics.monthlyReturnRate}%`],
+    ['Average variance', state.betaSuccessMetrics.averageVariance ?? '—'],
+    ['Average confidence', state.betaSuccessMetrics.averageConfidence ? `${state.betaSuccessMetrics.averageConfidence}%` : '—'],
+    ['Snapshot completion', `${state.betaSuccessMetrics.snapshotCompletionRate}%`],
+    ['Avg session', state.betaSuccessMetrics.averageSessionDurationMs ? `${Math.round(state.betaSuccessMetrics.averageSessionDurationMs / 1000)}s` : '—'],
+    ['Believability', state.betaSuccessMetrics.feedbackBelievabilityScore ?? '—'],
+  ]
+
+  return (
+    <div className="screen beta-diagnostics-screen">
+      <button className="text-button" onClick={onBack}>Back</button>
+      <header className="top-header compact">
+        <p className="small-muted">Internal Beta Diagnostics</p>
+        <h1>Stability Log</h1>
+      </header>
+      <section className="beta-debug-grid glass-card" aria-label="Beta success metrics">
+        {metricRows.map(([label, value]) => <Metric key={label} label={label} value={value} />)}
+      </section>
+      <section className="beta-debug-list" aria-label="Snapshot history diagnostics">
+        {checks.map((check) => {
+          const primary = check.testResults[0]
+          return (
+            <article className="beta-debug-card glass-card" key={check.id}>
+              <div className="beta-debug-card-head">
+                <div>
+                  <p className="eyebrow">{new Date(check.date).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</p>
+                  <h2>{check.score ?? '—'} · {check.confidence}% confidence</h2>
+                </div>
+                <strong>{check.stabilityMetrics?.stabilityScore ?? '—'} stability</strong>
+              </div>
+              <div className="validation-grid">
+                <Metric label="Variance" value={check.stabilityMetrics?.snapshotToSnapshotVariance ?? '—'} />
+                <Metric label="Variance Score" value={check.stabilityMetrics?.varianceScore ?? '—'} />
+                <Metric label="Repeatability" value={check.stabilityMetrics?.repeatabilityConfidence ? `${check.stabilityMetrics.repeatabilityConfidence}%` : '—'} />
+                <Metric label="Baseline Consistency" value={check.stabilityMetrics?.calibrationConsistency ?? '—'} />
+                <Metric label="Duration" value={check.analytics?.totalDurationMs ? `${Math.round(check.analytics.totalDurationMs / 1000)}s` : '—'} />
+                <Metric label="Retries" value={check.analytics?.retryFrequency ?? 0} />
+              </div>
+              <div className="raw-score-list">
+                {check.testResults.map((result) => (
+                  <div key={result.id}><span>{result.metricLabel}</span><b>{formatMeasurement(result)} · {result.normalizedScore} · {result.confidence}%</b></div>
+                ))}
+              </div>
+              <p className="debug-muted">Device: {primary?.conditions.deviceModel ?? '—'} · {primary?.conditions.screenSize ?? '—'} · brightness {primary ? Math.round(primary.conditions.brightness * 100) : '—'}% · interruptions {check.analytics?.interruptionCount ?? 0}</p>
+              {Boolean(check.stabilityMetrics?.qualitySignals.length) && <p className="debug-muted">Quality signals: {check.stabilityMetrics?.qualitySignals.join(', ')}</p>}
+            </article>
+          )
+        })}
+      </section>
+    </div>
+  )
+}
+
+function ReliabilityDashboard({ state, onBack }: { state: SightlyState; onBack: () => void }) {
+  const reliability = state.reliability
+  const capabilities = reliability ? Object.values(reliability.capabilities) : []
+  const baselineMessage = reliability?.baselineReady
+    ? `${reliability.baselineSnapshotCount} snapshots used to establish baseline.`
+    : `${Math.max(0, 3 - state.checks.length)} more snapshot${3 - state.checks.length === 1 ? '' : 's'} needed before baseline creation.`
+
+  return (
+    <div className="screen reliability-screen">
+      <button className="text-button" onClick={onBack}>Back</button>
+      <header className="top-header compact">
+        <p className="small-muted">Developer Mode</p>
+        <h1>Reliability Dashboard</h1>
+      </header>
+
+      <section className="reliability-hero glass-card">
+        <p className="eyebrow">Overall Snapshot Reliability</p>
+        <strong>{reliability?.overallSnapshotReliability.reliabilityScore ?? '—'}</strong>
+        <span>{reliability?.overallSnapshotReliability.repeatability ?? 'Baseline Pending'}</span>
+        <p>{reliability?.overallSnapshotReliability.message ?? 'Complete 3 snapshots before Sightly creates a baseline.'}</p>
+        <p className="formula-note">Vision Score formula is fixed: Sharpness 60%, Contrast 30%, Peripheral 10%. Recognition Threshold and other advanced tests do not affect the score.</p>
+      </section>
+
+      <section className="reliability-baseline glass-card">
+        <div>
+          <p className="eyebrow">Baseline Stability</p>
+          <h2>{reliability?.baselineStability ?? 'Not Ready'}</h2>
+          <p>{baselineMessage}</p>
+        </div>
+        <b>{reliability?.overallSnapshotReliability.confidence ?? 0}% Confidence</b>
+      </section>
+
+      <div className="reliability-list">
+        {capabilities.map((item) => (
+          <article className={`reliability-card glass-card ${item.noisy ? 'noisy' : ''}`} key={item.capability}>
+            <div className="reliability-card-head">
+              <div>
+                <h2>{item.label}</h2>
+                <p>Repeatability Score</p>
+              </div>
+              <strong>{item.repeatability}</strong>
+            </div>
+            <div className="reliability-meter" aria-label={`${item.label} repeatability ${item.consistencyScore}%`}><span style={{ width: `${item.consistencyScore}%` }} /></div>
+            <div className="validation-grid">
+              <Metric label="Consistency" value={`${item.consistencyScore}%`} />
+              <Metric label="Confidence" value={`${item.confidence}%`} />
+              <Metric label="Average" value={item.average ?? '—'} />
+              <Metric label="Std Dev" value={item.standardDeviation ?? '—'} />
+              <Metric label="Variance" value={item.varianceLabel} />
+              <Metric label="Samples" value={item.samples} />
+            </div>
+            <p className="reliability-message">{item.message}</p>
+            <ul>
+              {item.conditionNotes.slice(0, 3).map((note) => <li key={note}>{note}</li>)}
+            </ul>
+          </article>
+        ))}
+      </div>
+
+      <section className="reliability-baseline glass-card">
+        <div>
+          <p className="eyebrow">Likely Vision Change?</p>
+          <h2>{reliability?.likelyVisionChanged ? 'Possibly — confirm trend' : 'Not from one score change'}</h2>
+          <p>{reliability?.recommendation ?? 'Sightly prioritizes trust, repeatability, and long-term trend detection.'}</p>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function VisionTest({
+  tool,
+  step,
+  total,
+  onRecord,
+  onCancel,
+}: {
+  tool: VisionTool
+  step: number
+  total: number
+  onRecord: (value: number, details?: Partial<TestResult>) => void
+  onCancel: () => void
+}) {
+  const copy = assessmentDesign[tool.id]
+
+  if (tool.id === 'visualSharpness') {
+    return <SharpnessThresholdTest step={step} total={total} onRecord={onRecord} onCancel={onCancel} />
+  }
+
+  if (tool.id === 'contrastSensitivity') {
+    return <ContrastThresholdTest step={step} total={total} onRecord={onRecord} onCancel={onCancel} />
+  }
+
+  if (tool.id === 'peripheralAwareness') {
+    return <PeripheralAwarenessTest step={step} total={total} onRecord={onRecord} onCancel={onCancel} />
+  }
+
+  if (tool.id === 'visualResponse') {
+    return <VisualChoiceReactionTest step={step} total={total} onRecord={onRecord} onCancel={onCancel} />
+  }
+
+  return (
+    <div className="screen test-screen">
+      <button className="text-button" onClick={onCancel}>Cancel</button>
+      <p className="small-muted">{step + 1} of {total} · {tool.metricLabel}</p>
+      <h1>{copy.title}</h1>
+      <div className={`test-stage ${tool.capability}`}>
+        <div className="test-calibration">
+          <span>{tool.betterDirection === 'lower' ? 'lower is better' : 'higher is better'}</span>
+          <b>{tool.unit}</b>
+        </div>
+        <div className="focus-mark">{copy.visual}</div>
+        <div className="measurement-ruler" />
+        <div className="pulse-ring" />
+      </div>
+      <h2>{copy.prompt}</h2>
+      <p>{copy.measuredBy}</p>
+      <div className="test-actions measured-actions">
+        {copy.options.map((option) => (
+          <button className="glass-button measurement-button" key={option.label} onClick={() => onRecord(option.value)}>
+            <span>{option.label}</span>
+            <strong>{option.helper}</strong>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function normalizeAnswer(value: string) {
+  return value.toUpperCase().replace(/[^A-Z]/g, '')
+}
+
+const sharpnessFontSizes = [36, 30, 24, 20, 16, 14, 12, 10, 9, 8, 7, 6, 5, 4]
+const SHARPNESS_MIN_ROWS = 5
+const SHARPNESS_TARGET_REVERSALS = 2
+const SHARPNESS_MAX_ROWS = sharpnessFontSizes.length
+const SHARPNESS_MAX_ATTEMPTS = 30
+const sharpnessLetters = 'ABCDEFGHJKLMNPQRSTUVWXYZ'
+
+function randomSharpnessRow() {
+  return Array.from({ length: 6 }, () => sharpnessLetters[Math.floor(Math.random() * sharpnessLetters.length)]).join('')
+}
+
+const contrastLevels = [20, 15, 10, 8, 6, 4, 3, 2, 1, 0.8, 0.6, 0.5, 0.4, 0.35, 0.325, 0.3, 0.25, 0.2, 0.15, 0.1]
+const CONTRAST_MIN_TRIALS = 10
+const CONTRAST_TARGET_REVERSALS = 4
+const CONTRAST_MAX_TRIALS = 40
+const contrastDirections: ContrastDirection[] = ['top', 'right', 'bottom', 'left']
+
+function randomContrastDirection() {
+  return contrastDirections[Math.floor(Math.random() * contrastDirections.length)]
+}
+
+function countResultReversals<T extends { correct: boolean }>(trials: T[]) {
+  return trials.reduce((count, trial, index) => index > 0 && trial.correct !== trials[index - 1].correct ? count + 1 : count, 0)
+}
+
+function hasThresholdBracket<T extends { correct: boolean }>(trials: T[]) {
+  return trials.some((trial) => trial.correct) && trials.some((trial) => !trial.correct)
+}
+
+function thresholdReady<T extends { correct: boolean }>(trials: T[], minimumTrials: number, targetReversals: number) {
+  return trials.length >= minimumTrials && hasThresholdBracket(trials) && countResultReversals(trials) >= targetReversals
+}
+
+const LOW_CONFIDENCE_THRESHOLD_NOTE = 'Unable to confidently estimate threshold. Please try again.'
+
+function repeatedBoundaryResult<T extends { correct?: boolean; passed?: boolean }>(trials: T[], atHardest: boolean, atEasiest: boolean) {
+  const recent = trials.slice(-5)
+  if (recent.length < 5) return false
+  const succeeded = (trial: T) => trial.correct ?? trial.passed ?? false
+  return (atHardest && recent.every((trial) => succeeded(trial))) || (atEasiest && recent.every((trial) => !succeeded(trial)))
+}
+
+function captureTestConditions() {
+  const orientation = window.innerWidth >= window.innerHeight ? 'landscape' as const : 'portrait' as const
+  const now = new Date()
+  const batterySaverMode = Boolean((navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData)
+  return {
+    screenSize: `${window.screen?.width || window.innerWidth} × ${window.screen?.height || window.innerHeight}`,
+    brightness: 0.82,
+    deviceModel: navigator.userAgent.includes('iPhone')
+      ? 'iPhone'
+      : navigator.userAgent.includes('Mac')
+        ? 'Apple device'
+        : 'Current device',
+    orientation,
+    lightingConfidence: orientation === 'portrait' ? 96 : 90,
+    dateTime: now.toISOString(),
+    timeOfDay: now.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }),
+    batterySaverMode,
+    eyeFatigue: 'normal' as EyeFatigueLevel,
+    visionCorrection: 'notApplicable' as VisionCorrectionUsage,
+    viewingDistanceEstimate: 'comfortable consistent distance',
+  }
+}
+
+const peripheralDirections: PeripheralDirection[] = ['top', 'bottom', 'left', 'right', 'upper-left', 'upper-right', 'lower-left', 'lower-right']
+const PERIPHERAL_MIN_TRIALS = 16
+const PERIPHERAL_TARGET_REVERSALS = 3
+const PERIPHERAL_MAX_TRIALS = 40
+const peripheralDifficulty = [
+  { difficulty: 1, duration: 650, size: 34, contrast: 0.95, eccentricity: 28 },
+  { difficulty: 2, duration: 600, size: 31, contrast: 0.9, eccentricity: 31 },
+  { difficulty: 3, duration: 540, size: 28, contrast: 0.84, eccentricity: 34 },
+  { difficulty: 4, duration: 480, size: 25, contrast: 0.78, eccentricity: 37 },
+  { difficulty: 5, duration: 420, size: 23, contrast: 0.7, eccentricity: 40 },
+  { difficulty: 6, duration: 360, size: 21, contrast: 0.62, eccentricity: 43 },
+  { difficulty: 7, duration: 300, size: 19, contrast: 0.54, eccentricity: 46 },
+  { difficulty: 8, duration: 250, size: 17, contrast: 0.46, eccentricity: 48 },
+  { difficulty: 9, duration: 200, size: 15, contrast: 0.38, eccentricity: 50 },
+  { difficulty: 10, duration: 160, size: 13, contrast: 0.32, eccentricity: 52 },
+  { difficulty: 11, duration: 125, size: 12, contrast: 0.26, eccentricity: 54 },
+  { difficulty: 12, duration: 100, size: 10, contrast: 0.22, eccentricity: 56 },
+]
+
+function randomPeripheralDirection(previous?: PeripheralDirection) {
+  const pool = peripheralDirections.filter((direction) => direction !== previous)
+  return pool[Math.floor(Math.random() * pool.length)]
+}
+
+function peripheralPosition(direction: PeripheralDirection, eccentricity: number) {
+  const center = 50
+  const map: Record<PeripheralDirection, [number, number]> = {
+    top: [50, center - eccentricity],
+    bottom: [50, center + eccentricity],
+    left: [center - eccentricity, 50],
+    right: [center + eccentricity, 50],
+    'upper-left': [center - eccentricity * 0.72, center - eccentricity * 0.72],
+    'upper-right': [center + eccentricity * 0.72, center - eccentricity * 0.72],
+    'lower-left': [center - eccentricity * 0.72, center + eccentricity * 0.72],
+    'lower-right': [center + eccentricity * 0.72, center + eccentricity * 0.72],
+  }
+  return map[direction]
+}
+
+function PeripheralAwarenessTest({
+  step,
+  total,
+  onRecord,
+  onCancel,
+}: {
+  step: number
+  total: number
+  onRecord: (value: number, details?: Partial<TestResult>) => void
+  onCancel: () => void
+}) {
+  const [started, setStarted] = useState(false)
+  const [difficultyIndex, setDifficultyIndex] = useState(0)
+  const [direction, setDirection] = useState<PeripheralDirection>(() => randomPeripheralDirection())
+  const [stimulusVisible, setStimulusVisible] = useState(false)
+  const [canAnswer, setCanAnswer] = useState(false)
+  const [roundStartedAt, setRoundStartedAt] = useState(() => performance.now())
+  const [trials, setTrials] = useState<PeripheralTrial[]>([])
+  const [feedback, setFeedback] = useState('')
+
+  const profile = peripheralDifficulty[difficultyIndex]
+  const currentPosition = peripheralPosition(direction, profile.eccentricity)
+  const correctTrials = trials.filter((trial) => trial.correct)
+  const failedTrials = trials.filter((trial) => !trial.correct)
+  const reversals = countResultReversals(trials)
+  const confidencePreview = Math.min(98, Math.max(58, 58 + trials.length * 2.8 + reversals * 7 + (correctTrials.length && failedTrials.length ? 12 : 0)))
+  const progress = Math.min(100, Math.round((confidencePreview / 94) * 100))
+
+  useEffect(() => {
+    if (!started) return undefined
+    const revealTimer = window.setTimeout(() => {
+      setRoundStartedAt(performance.now())
+      setStimulusVisible(true)
+      setCanAnswer(true)
+    }, 480)
+    const hideTimer = window.setTimeout(() => setStimulusVisible(false), 480 + profile.duration)
+    return () => {
+      window.clearTimeout(revealTimer)
+      window.clearTimeout(hideTimer)
+    }
+  }, [started, direction, profile.duration])
+
+  function finish(nextTrials: PeripheralTrial[], forcedLowConfidence = false) {
+    const correct = nextTrials.filter((trial) => trial.correct)
+    const misses = nextTrials.filter((trial) => trial.selectedDirection === 'miss').length
+    const accuracy = Math.round((correct.length / nextTrials.length) * 100)
+    const missRate = Math.round((misses / nextTrials.length) * 100)
+    const answeredTimes = nextTrials.filter((trial) => trial.selectedDirection !== 'miss').map((trial) => trial.responseTimeMs)
+    const reactionTime = answeredTimes.length ? Math.round(answeredTimes.reduce((sum, value) => sum + value, 0) / answeredTimes.length) : 0
+    const mean = reactionTime || 1
+    const variance = answeredTimes.length ? answeredTimes.reduce((sum, value) => sum + Math.pow(value - mean, 2), 0) / answeredTimes.length : 0
+    const consistency = Math.max(0, Math.round(100 - Math.sqrt(variance) / 4))
+    const lastPassedDifficulty = correct.length ? Math.max(...correct.map((trial) => trial.difficulty)) : null
+    const failedDifficulties = nextTrials.filter((trial) => !trial.correct).map((trial) => trial.difficulty)
+    const firstFailedDifficulty = lastPassedDifficulty === null
+      ? (failedDifficulties.length ? Math.min(...failedDifficulties) : null)
+      : (failedDifficulties.filter((difficulty) => difficulty >= lastPassedDifficulty).sort((a, b) => a - b)[0] ?? failedDifficulties.sort((a, b) => Math.abs(a - lastPassedDifficulty) - Math.abs(b - lastPassedDifficulty))[0] ?? null)
+    const estimatedThreshold = lastPassedDifficulty !== null && firstFailedDifficulty !== null
+      ? Math.round(((lastPassedDifficulty + firstFailedDifficulty) / 2) * 10) / 10
+      : lastPassedDifficulty ?? firstFailedDifficulty ?? profile.difficulty
+    const finalReversals = countResultReversals(nextTrials)
+    const thresholdScore = Math.max(0, Math.min(100, Math.round(estimatedThreshold * 8.4)))
+    const score = Math.max(0, Math.min(100, Math.round(thresholdScore * 0.74 + accuracy * 0.22 - missRate * 0.08 + consistency * 0.04)))
+    const confidence = forcedLowConfidence ? 55 : Math.max(72, Math.min(98, Math.round(64 + nextTrials.length * 2.3 + finalReversals * 5 + (lastPassedDifficulty !== null && firstFailedDifficulty !== null ? 10 : 0) - misses)))
+    const conditions = captureTestConditions()
+    const payload: PeripheralAwarenessPayload = {
+      testType: 'peripheral_awareness',
+      score,
+      reactionTime,
+      accuracy,
+      misses,
+      missRate,
+      threshold: estimatedThreshold,
+      lastPassedDifficulty,
+      firstFailedDifficulty,
+      estimatedThreshold,
+      confidence,
+      deviceModel: conditions.deviceModel,
+      screenSize: conditions.screenSize,
+      brightness: Math.round(conditions.brightness * 100),
+      timestamp: conditions.dateTime,
+      edgeAccuracy: accuracy,
+      consistency,
+      trials: nextTrials,
+    }
+
+    onRecord(estimatedThreshold, {
+      confidence,
+      conditions,
+      note: forcedLowConfidence ? LOW_CONFIDENCE_THRESHOLD_NOTE : `Peripheral Awareness ${score}. Threshold ${estimatedThreshold}/10, accuracy ${accuracy}%, miss rate ${missRate}%, average reaction ${reactionTime}ms.`,
+      peripheralAwareness: payload,
+    })
+  }
+
+  function recordTap(selectedDirection: PeripheralDirection | 'miss') {
+    if (!canAnswer) return
+    setCanAnswer(false)
+    setStimulusVisible(false)
+    const responseTimeMs = selectedDirection === 'miss' ? 1800 : Math.round(performance.now() - roundStartedAt)
+    const correct = selectedDirection !== 'miss'
+    const trial: PeripheralTrial = {
+      round: trials.length + 1,
+      direction,
+      selectedDirection: correct ? direction : 'miss',
+      appearanceTimeMs: profile.duration,
+      stimulusSizePx: profile.size,
+      eccentricity: profile.eccentricity,
+      contrast: profile.contrast,
+      difficulty: profile.difficulty,
+      correct,
+      responseTimeMs,
+    }
+    const nextTrials = [...trials, trial]
+    const thresholdFound = thresholdReady(nextTrials, PERIPHERAL_MIN_TRIALS, PERIPHERAL_TARGET_REVERSALS)
+    const safetyLimitReached = nextTrials.length >= PERIPHERAL_MAX_TRIALS || repeatedBoundaryResult(nextTrials, difficultyIndex === peripheralDifficulty.length - 1, difficultyIndex === 0)
+
+    if (thresholdFound || safetyLimitReached) {
+      finish(nextTrials, safetyLimitReached && !thresholdFound)
+      return
+    }
+
+    setTrials(nextTrials)
+    setFeedback(selectedDirection === 'miss' ? 'Missed. The next cue will be slightly easier.' : correct ? 'Detected. Increasing difficulty.' : 'Close. Adjusting to find your boundary.')
+    setDifficultyIndex((current) => correct ? Math.min(current + 1, peripheralDifficulty.length - 1) : Math.max(current - 1, 0))
+    setDirection(randomPeripheralDirection(direction))
+  }
+
+  function markSeen() {
+    if (!canAnswer) return
+    recordTap(direction)
+  }
+
+  if (!started) {
+    return (
+      <div className="screen test-screen peripheral-screen">
+        <button className="text-button" onClick={onCancel}>Cancel</button>
+        <p className="small-muted">{step + 1} of {total} · Peripheral awareness threshold</p>
+        <h1>Peripheral Awareness</h1>
+        <section className="sharpness-instructions peripheral-instructions glass-card">
+          <p className="eyebrow">Before you start</p>
+          <ul>
+            <li>Keep your eyes focused on the center dot throughout the test.</li>
+            <li>Only one soft cue appears at a time around the edge.</li>
+            <li>Press whether you saw the cue; you do not need to identify its location.</li>
+            <li>Difficulty changes by duration, size, contrast, and distance from center.</li>
+          </ul>
+        </section>
+        <button className="glass-button primary sharpness-start" onClick={() => setStarted(true)}>Start peripheral threshold</button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="screen test-screen peripheral-screen">
+      <button className="text-button" onClick={onCancel}>Cancel</button>
+      <p className="small-muted">{step + 1} of {total} · Threshold confidence</p>
+      <div className="difficulty-track peripheral-track" aria-label={`Peripheral confidence ${confidencePreview}%`}>
+        <span style={{ width: `${progress}%` }} />
+      </div>
+      <section className="peripheral-stage glass-card" aria-label="Watch for one peripheral cue while focusing on the center dot">
+        <div className="peripheral-field" />
+        <div className="center-dot" aria-label="Center focus dot">•</div>
+        {stimulusVisible && (
+          <span
+            className="peripheral-stimulus"
+            style={{
+              left: `${currentPosition[0]}%`,
+              top: `${currentPosition[1]}%`,
+              width: profile.size,
+              height: profile.size,
+              '--stimulus-alpha': profile.contrast,
+            } as CSSProperties & Record<'--stimulus-alpha', number>}
+          />
+        )}
+      </section>
+      <h2>Did you see the target?</h2>
+      <p>Keep your eyes on the center dot. One target appears per round; simply confirm whether you saw it.</p>
+      <div className="peripheral-answer-row">
+        <button className="glass-button primary" disabled={!canAnswer} onClick={markSeen}>I saw it</button>
+        <button className="glass-button" disabled={!canAnswer} onClick={() => recordTap('miss')}>I did not see it</button>
+      </div>
+      {feedback && <p className="sharpness-feedback peripheral-feedback">{feedback}</p>}
+      <div className="sharpness-stats">
+        <span>Trials: {trials.length}</span>
+        <span>Cue: {profile.duration}ms</span>
+        <span>Confidence: {confidencePreview}%</span>
+      </div>
+      <p className="calm-note">Personal baseline only — best compared month-to-month on this device.</p>
+    </div>
+  )
+}
+
+const visualDurations = [500, 350, 250, 200, 150, 125, 100, 75, 50]
+const VISUAL_RESPONSE_MIN_TRIALS = 12
+const VISUAL_RESPONSE_TARGET_REVERSALS = 3
+const VISUAL_RESPONSE_MAX_TRIALS = 40
+const visualSymbols: Record<VisualChoiceSymbol, string> = {
+  left: '←',
+  right: '→',
+  up: '↑',
+  down: '↓',
+}
+const visualAnswerLabels: Record<VisualChoiceSymbol, string> = {
+  left: 'Left',
+  right: 'Right',
+  up: 'Up',
+  down: 'Down',
+}
+const visualSymbolOrder: VisualChoiceSymbol[] = ['left', 'right', 'up', 'down']
+
+type VisualRoundPhase = 'fixation' | 'symbol' | 'answer'
+
+type VisualResponseResult = {
+  thresholdMs: number
+  accuracy: number
+  avgResponseTimeMs: number
+  roundsCompleted: number
+  shortestPassedExposureMs: number | null
+  firstFailedExposureMs: number | null
+  confidence: number
+  consistency: number
+  conditions: ReturnType<typeof captureTestConditions>
+  payload: VisualChoicePayload
+}
+
+function randomVisualSymbol(previous?: VisualChoiceSymbol) {
+  const pool = visualSymbolOrder.filter((symbol) => symbol !== previous)
+  return pool[Math.floor(Math.random() * pool.length)]
+}
+
+function computeVisualThreshold(trials: VisualChoiceTrial[], fallbackDuration: number) {
+  const correctTrials = trials.filter((trial) => trial.correct)
+  const failedTrials = trials.filter((trial) => !trial.correct)
+  const shortestPassedExposureMs = correctTrials.length ? Math.min(...correctTrials.map((trial) => trial.exposureDurationMs)) : null
+  const firstFailedExposureMs = failedTrials[0]?.exposureDurationMs ?? null
+
+  const reliableDurations = [...new Set(trials.map((trial) => trial.exposureDurationMs))]
+    .sort((a, b) => a - b)
+    .filter((duration) => {
+      const atDuration = trials.filter((trial) => trial.exposureDurationMs === duration)
+      if (atDuration.length < 2) return false
+      const accuracy = atDuration.filter((trial) => trial.correct).length / atDuration.length
+      return accuracy >= 0.67
+    })
+
+  const thresholdMs = reliableDurations[0]
+    ?? (shortestPassedExposureMs !== null && firstFailedExposureMs !== null
+      ? Math.max(shortestPassedExposureMs, firstFailedExposureMs)
+      : shortestPassedExposureMs ?? firstFailedExposureMs ?? fallbackDuration)
+
+  return { thresholdMs, shortestPassedExposureMs, firstFailedExposureMs }
+}
+
+function VisualChoiceReactionTest({
+  step,
+  total,
+  onRecord,
+  onCancel,
+}: {
+  step: number
+  total: number
+  onRecord: (value: number, details?: Partial<TestResult>) => void
+  onCancel: () => void
+}) {
+  const [started, setStarted] = useState(false)
+  const [durationIndex, setDurationIndex] = useState(0)
+  const [symbol, setSymbol] = useState<VisualChoiceSymbol>(() => randomVisualSymbol())
+  const [phase, setPhase] = useState<VisualRoundPhase>('fixation')
+  const [roundKey, setRoundKey] = useState(0)
+  const [answerStartedAt, setAnswerStartedAt] = useState(() => performance.now())
+  const [trials, setTrials] = useState<VisualChoiceTrial[]>([])
+  const [feedback, setFeedback] = useState('')
+  const [result, setResult] = useState<VisualResponseResult | null>(null)
+
+  const exposureDurationMs = visualDurations[durationIndex]
+  const correctTrials = trials.filter((trial) => trial.correct)
+  const failedTrials = trials.filter((trial) => !trial.correct)
+  const reversals = countResultReversals(trials)
+  const confidencePreview = Math.min(98, Math.max(58, 55 + trials.length * 2.2 + reversals * 6 + (correctTrials.length && failedTrials.length ? 10 : 0)))
+  const progress = Math.min(100, Math.round((confidencePreview / 94) * 100))
+
+  useEffect(() => {
+    if (!started || result) return undefined
+    const delay = 500 + Math.round(Math.random() * 1000)
+    const revealTimer = window.setTimeout(() => {
+      setPhase('symbol')
+    }, delay)
+    const hideTimer = window.setTimeout(() => {
+      setPhase('answer')
+      setAnswerStartedAt(performance.now())
+    }, delay + exposureDurationMs)
+    return () => {
+      window.clearTimeout(revealTimer)
+      window.clearTimeout(hideTimer)
+    }
+  }, [started, roundKey, exposureDurationMs, result])
+
+  function buildResult(nextTrials: VisualChoiceTrial[], forcedLowConfidence = false): VisualResponseResult {
+    const nextCorrect = nextTrials.filter((trial) => trial.correct)
+    const responseTimes = nextTrials.filter((trial) => trial.selectedSymbol !== 'miss').map((trial) => trial.responseTimeMs)
+    const avgResponseTimeMs = responseTimes.length ? Math.round(responseTimes.reduce((sum, value) => sum + value, 0) / responseTimes.length) : 0
+    const mean = avgResponseTimeMs || 1
+    const variance = responseTimes.length ? responseTimes.reduce((sum, value) => sum + Math.pow(value - mean, 2), 0) / responseTimes.length : 0
+    const consistency = Math.max(0, Math.round(100 - Math.sqrt(variance) / 4))
+    const accuracy = Math.round((nextCorrect.length / nextTrials.length) * 100)
+    const { thresholdMs: rawThresholdMs, shortestPassedExposureMs, firstFailedExposureMs } = computeVisualThreshold(nextTrials, exposureDurationMs)
+    const thresholdMs = accuracy < 70
+      ? Math.max(rawThresholdMs, firstFailedExposureMs ?? rawThresholdMs, visualDurations[0])
+      : accuracy < 85
+        ? Math.max(rawThresholdMs, firstFailedExposureMs ?? rawThresholdMs)
+        : rawThresholdMs
+    const finalReversals = countResultReversals(nextTrials)
+    const accuracyPenalty = Math.max(0, 85 - accuracy) * 0.9
+    const confidence = forcedLowConfidence ? 55 : Math.max(55, Math.min(98, Math.round(58 + nextTrials.length * 1.7 + finalReversals * 5 + (shortestPassedExposureMs !== null && firstFailedExposureMs !== null ? 12 : 0) + Math.max(0, accuracy - 75) * 0.22 - accuracyPenalty)))
+    const conditions = captureTestConditions()
+    const payload: VisualChoicePayload = {
+      testType: 'visual_response',
+      thresholdMs,
+      accuracy,
+      avgResponseTimeMs,
+      roundsCompleted: nextTrials.length,
+      shortestPassedExposureMs,
+      firstFailedExposureMs,
+      confidence,
+      consistency,
+      deviceModel: conditions.deviceModel,
+      screenSize: conditions.screenSize,
+      brightness: Math.round(conditions.brightness * 100),
+      timestamp: conditions.dateTime,
+      trials: nextTrials,
+    }
+    return {
+      thresholdMs,
+      accuracy,
+      avgResponseTimeMs,
+      roundsCompleted: nextTrials.length,
+      shortestPassedExposureMs,
+      firstFailedExposureMs,
+      confidence,
+      consistency,
+      conditions,
+      payload,
+    }
+  }
+
+  function completeWithResult(nextTrials: VisualChoiceTrial[], forcedLowConfidence = false) {
+    setTrials(nextTrials)
+    setPhase('answer')
+    setResult(buildResult(nextTrials, forcedLowConfidence))
+  }
+
+  function continueFromResult() {
+    if (!result) return
+    onRecord(result.thresholdMs, {
+      confidence: result.confidence,
+      conditions: result.conditions,
+      note: result.confidence <= 55 ? LOW_CONFIDENCE_THRESHOLD_NOTE : `Visual Response threshold ${result.thresholdMs}ms. Accuracy ${result.accuracy}%, average response time ${result.avgResponseTimeMs}ms, confidence ${result.confidence}%.`,
+      visualChoiceReaction: result.payload,
+    })
+  }
+
+  function chooseSymbol(selectedSymbol: VisualChoiceSymbol, eventTimeStamp: number) {
+    if (phase !== 'answer' || result) return
+    const correct = selectedSymbol === symbol
+    const responseTimeMs = Math.min(2500, Math.max(0, Math.round(eventTimeStamp - answerStartedAt)))
+    const trial: VisualChoiceTrial = {
+      round: trials.length + 1,
+      symbol,
+      selectedSymbol,
+      exposureDurationMs,
+      correct,
+      responseTimeMs,
+    }
+    const nextTrials = [...trials, trial]
+    const thresholdFound = thresholdReady(nextTrials, VISUAL_RESPONSE_MIN_TRIALS, VISUAL_RESPONSE_TARGET_REVERSALS)
+    const safetyLimitReached = nextTrials.length >= VISUAL_RESPONSE_MAX_TRIALS || repeatedBoundaryResult(nextTrials, durationIndex === visualDurations.length - 1, durationIndex === 0)
+
+    if (thresholdFound || safetyLimitReached) {
+      completeWithResult(nextTrials, safetyLimitReached && !thresholdFound)
+      return
+    }
+
+    setTrials(nextTrials)
+    setFeedback(correct ? 'Correct. The next symbol may appear more briefly.' : 'Not quite. Sightly will make the next exposure slightly easier.')
+    setDurationIndex((current) => correct ? Math.min(current + 1, visualDurations.length - 1) : Math.max(current - 1, 0))
+    setSymbol(randomVisualSymbol(symbol))
+    setPhase('fixation')
+    setRoundKey((current) => current + 1)
+  }
+
+  if (!started) {
+    return (
+      <div className="screen test-screen visual-response-screen">
+        <button className="text-button" onClick={onCancel}>Cancel</button>
+        <p className="small-muted">{step + 1} of {total} · Recognition threshold</p>
+        <h1>Recognition Threshold</h1>
+        <section className="sharpness-instructions glass-card visual-response-instructions">
+          <h2>How quickly can you recognize what you see?</h2>
+          <ul>
+            <li>A symbol will briefly appear on screen.</li>
+            <li>Identify the symbol as accurately as possible.</li>
+            <li>Accuracy matters more than speed.</li>
+            <li>Keep your eyes focused near the center of the screen.</li>
+          </ul>
+        </section>
+        <button className="glass-button primary sharpness-start" onClick={() => setStarted(true)}>Begin Test</button>
+      </div>
+    )
+  }
+
+  if (result) {
+    const typicalLow = 140
+    const typicalHigh = 170
+    const rangeMessage = result.thresholdMs > typicalHigh
+      ? 'Slower than your typical range. Retest in 7 days to confirm.'
+      : result.thresholdMs < typicalLow
+        ? 'Measured above your typical range.'
+        : 'Within your normal range.'
+
+    return (
+      <div className="screen test-screen visual-response-screen visual-response-result-screen">
+        <button className="text-button" onClick={onCancel}>Cancel</button>
+        <p className="small-muted">{step + 1} of {total} · Recognition threshold result</p>
+        <section className="visual-response-result glass-card">
+          <p className="eyebrow">Recognition Threshold</p>
+          <strong>{result.thresholdMs}ms</strong>
+          <span>Recognition Threshold</span>
+          <div className="result-range">Typical Range <b>{typicalLow}ms–{typicalHigh}ms</b></div>
+          <p>{rangeMessage}</p>
+        </section>
+        <div className="visual-result-grid">
+          <Metric label="Accuracy" value={`${result.accuracy}%`} />
+          <Metric label="Confidence" value={`${result.confidence}%`} />
+          <Metric label="Rounds Completed" value={result.roundsCompleted} />
+          <Metric label="Avg Response" value={`${result.avgResponseTimeMs}ms`} />
+        </div>
+        <button className="glass-button primary sharpness-start" onClick={continueFromResult}>Continue</button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="screen test-screen visual-response-screen">
+      <button className="text-button" onClick={onCancel}>Cancel</button>
+      <p className="small-muted">{step + 1} of {total} · Recognition threshold</p>
+      <div className="difficulty-track visual-response-track" aria-label={`Visual response confidence ${confidencePreview}%`}>
+        <span style={{ width: `${progress}%` }} />
+      </div>
+      <section className="visual-response-stage glass-card">
+        <p className="eyebrow">Round {trials.length + 1} · {exposureDurationMs}ms exposure</p>
+        <div className={`visual-symbol ${phase === 'symbol' ? 'visible' : ''}`}>{phase === 'symbol' ? visualSymbols[symbol] : '•'}</div>
+      </section>
+      <h2>{phase === 'answer' ? 'Which direction appeared?' : 'Keep your eyes near the center.'}</h2>
+      <p>{phase === 'answer' ? 'Choose what you saw. Accuracy matters more than speed.' : 'A single direction symbol will appear once, then disappear.'}</p>
+      {feedback && <p className="sharpness-feedback visual-response-feedback">{feedback}</p>}
+      <div className="symbol-choice-pad visual-direction-pad" aria-label="Visual response choices">
+        {visualSymbolOrder.map((choice) => (
+          <button className="glass-button symbol-choice direction-choice" disabled={phase !== 'answer'} key={choice} onClick={(event) => chooseSymbol(choice, event.timeStamp)}>
+            <span>{visualSymbols[choice]}</span>
+            <small>{visualAnswerLabels[choice]}</small>
+          </button>
+        ))}
+      </div>
+      <div className="sharpness-stats">
+        <span>Rounds: {trials.length}</span>
+        <span>Exposure: {exposureDurationMs}ms</span>
+        <span>Confidence: {confidencePreview}%</span>
+      </div>
+      <p className="calm-note">Sightly is estimating the shortest exposure duration you can reliably recognize.</p>
+    </div>
+  )
+}
+
+function ContrastThresholdTest({
+  step,
+  total,
+  onRecord,
+  onCancel,
+}: {
+  step: number
+  total: number
+  onRecord: (value: number, details?: Partial<TestResult>) => void
+  onCancel: () => void
+}) {
+  const [started, setStarted] = useState(false)
+  const [levelIndex, setLevelIndex] = useState(0)
+  const [direction, setDirection] = useState<ContrastDirection>(() => randomContrastDirection())
+  const [trials, setTrials] = useState<ContrastTrial[]>([])
+  const [roundStartedAt, setRoundStartedAt] = useState(() => performance.now())
+  const [feedback, setFeedback] = useState('')
+
+  const contrast = contrastLevels[levelIndex]
+  const correctTrials = trials.filter((trial) => trial.correct)
+  const failedTrials = trials.filter((trial) => !trial.correct)
+  const reversals = countResultReversals(trials)
+  const confidencePreview = Math.min(98, Math.max(62, 58 + trials.length * 3 + reversals * 7 + (correctTrials.length && failedTrials.length ? 10 : 0)))
+  const progress = Math.min(100, Math.round((confidencePreview / 94) * 100))
+
+  function finish(nextTrials: ContrastTrial[], forcedLowConfidence = false) {
+    const nextCorrect = nextTrials.filter((trial) => trial.correct)
+    const nextFailed = nextTrials.filter((trial) => !trial.correct)
+    const lowestPassed = nextCorrect.length ? Math.min(...nextCorrect.map((trial) => trial.contrast)) : null
+    const firstFailed = nextFailed[0]?.contrast ?? null
+    const threshold = lowestPassed !== null && firstFailed !== null
+      ? Math.round(((lowestPassed + firstFailed) / 2) * 1000) / 1000
+      : lowestPassed ?? firstFailed ?? contrast
+    const accuracy = Math.round((nextCorrect.length / nextTrials.length) * 100)
+    const avgResponseTimeMs = Math.round(nextTrials.reduce((sum, trial) => sum + trial.responseTimeMs, 0) / nextTrials.length)
+    const avgResponseTime = Math.round((avgResponseTimeMs / 1000) * 10) / 10
+    const nextReversals = countResultReversals(nextTrials)
+    const confidence = forcedLowConfidence ? 55 : Math.min(98, Math.max(74, 62 + nextTrials.length * 3 + nextReversals * 7 + (lowestPassed !== null && firstFailed !== null ? 10 : 0)))
+    const conditions = captureTestConditions()
+    const payload: ContrastThresholdPayload = {
+      testType: 'contrast_sensitivity',
+      date: conditions.dateTime,
+      threshold,
+      lowestPassed,
+      firstFailed,
+      accuracy,
+      avgResponseTime,
+      confidence,
+      deviceModel: conditions.deviceModel,
+      screenSize: conditions.screenSize,
+      brightness: Math.round(conditions.brightness * 100),
+      ambientLightingEstimate: conditions.lightingConfidence >= 94 ? 'normal steady lighting' : 'moderate lighting confidence',
+      trials: nextTrials,
+    }
+
+    onRecord(threshold, {
+      confidence,
+      conditions,
+      note: forcedLowConfidence ? LOW_CONFIDENCE_THRESHOLD_NOTE : `Contrast threshold measured at ${threshold}%. Lowest passed: ${lowestPassed ?? '—'}%. First failed: ${firstFailed ?? '—'}%.`,
+      contrastThreshold: payload,
+    })
+  }
+
+  function answer(selectedDirection: ContrastDirection) {
+    const correct = selectedDirection === direction
+    const trial: ContrastTrial = {
+      round: trials.length + 1,
+      contrast,
+      direction,
+      selectedDirection,
+      correct,
+      responseTimeMs: Math.round(performance.now() - roundStartedAt),
+    }
+    const nextTrials = [...trials, trial]
+    const thresholdFound = thresholdReady(nextTrials, CONTRAST_MIN_TRIALS, CONTRAST_TARGET_REVERSALS)
+    const safetyLimitReached = nextTrials.length >= CONTRAST_MAX_TRIALS || repeatedBoundaryResult(nextTrials, levelIndex === contrastLevels.length - 1, levelIndex === 0)
+
+    if (thresholdFound || safetyLimitReached) {
+      finish(nextTrials, safetyLimitReached && !thresholdFound)
+      return
+    }
+
+    setTrials(nextTrials)
+    setLevelIndex((current) => correct ? Math.min(current + 1, contrastLevels.length - 1) : Math.max(current - 1, 0))
+    setDirection(randomContrastDirection())
+    setFeedback(correct ? 'Correct. Lowering the contrast.' : 'Not quite. Raising contrast slightly to narrow your threshold.')
+    setRoundStartedAt(performance.now())
+  }
+
+  if (!started) {
+    return (
+      <div className="screen test-screen contrast-screen">
+        <button className="text-button" onClick={onCancel}>Cancel</button>
+        <p className="small-muted">{step + 1} of {total} · Contrast threshold</p>
+        <h1>Contrast Sensitivity</h1>
+        <section className="sharpness-instructions contrast-instructions glass-card">
+          <p className="eyebrow">Before you start</p>
+          <ul>
+            <li>Hold your device at a comfortable and consistent distance.</li>
+            <li>Complete this test in normal lighting.</li>
+            <li>Select the direction of the opening in each ring.</li>
+            <li>Continue until the shapes become difficult to distinguish.</li>
+          </ul>
+        </section>
+        <button className="glass-button primary sharpness-start" onClick={() => {
+          setStarted(true)
+          setRoundStartedAt(performance.now())
+        }}>Start contrast test</button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="screen test-screen contrast-screen">
+      <button className="text-button" onClick={onCancel}>Cancel</button>
+      <p className="small-muted">{step + 1} of {total} · Adaptive staircase</p>
+      <div className="difficulty-track contrast-track" aria-label={`Threshold confidence ${confidencePreview}%`}>
+        <span style={{ width: `${progress}%` }} />
+      </div>
+      <section className="contrast-stage glass-card">
+        <p className="eyebrow">Round {trials.length + 1} · {contrast}% contrast</p>
+        <div className={`landolt-ring gap-${direction}`} style={{ '--ring-contrast': contrast / 100 } as CSSProperties & Record<'--ring-contrast', number>} aria-label="Landolt C ring" />
+      </section>
+      <h2>Where is the opening?</h2>
+      <p>Choose the direction, even as the ring fades. Lower thresholds indicate stronger contrast sensitivity.</p>
+      {feedback && <p className="sharpness-feedback contrast-feedback">{feedback}</p>}
+      <div className="direction-pad" aria-label="Opening direction answers">
+        <button className="glass-button direction top" onClick={() => answer('top')}>Top</button>
+        <button className="glass-button direction left" onClick={() => answer('left')}>Left</button>
+        <button className="glass-button direction right" onClick={() => answer('right')}>Right</button>
+        <button className="glass-button direction bottom" onClick={() => answer('bottom')}>Bottom</button>
+      </div>
+      <div className="sharpness-stats">
+        <span>Accuracy: {trials.length ? Math.round((correctTrials.length / trials.length) * 100) : '—'}%</span>
+        <span>Confidence: {confidencePreview}%</span>
+      </div>
+      <p className="calm-note">Compared only with your personal baseline — not other users.</p>
+    </div>
+  )
+}
+
+function countSharpnessReversals(attempts: SharpnessRowAttempt[]) {
+  return attempts.reduce((count, attempt, index) => index > 0 && attempt.passed !== attempts[index - 1].passed ? count + 1 : count, 0)
+}
+
+function sharpnessThresholdReady(attempts: SharpnessRowAttempt[]) {
+  return attempts.length >= SHARPNESS_MIN_ROWS
+    && attempts.some((attempt) => attempt.passed)
+    && attempts.some((attempt) => !attempt.passed)
+    && countSharpnessReversals(attempts) >= SHARPNESS_TARGET_REVERSALS
+}
+
+function SharpnessThresholdTest({
+  step,
+  total,
+  onRecord,
+  onCancel,
+}: {
+  step: number
+  total: number
+  onRecord: (value: number, details?: Partial<TestResult>) => void
+  onCancel: () => void
+}) {
+  const [started, setStarted] = useState(false)
+  const [eyeMode, setEyeMode] = useState<SharpnessEyeMode>('both')
+  const [rowIndex, setRowIndex] = useState(0)
+  const [letters, setLetters] = useState(() => randomSharpnessRow())
+  const [answer, setAnswer] = useState('')
+  const [attempts, setAttempts] = useState<SharpnessRowAttempt[]>([])
+  const [roundStartedAt, setRoundStartedAt] = useState(() => performance.now())
+  const [feedback, setFeedback] = useState('')
+
+  const fontSize = sharpnessFontSizes[rowIndex]
+  const progress = Math.round(((rowIndex + 1) / SHARPNESS_MAX_ROWS) * 100)
+
+  function submitRow() {
+    const typedAnswer = normalizeAnswer(answer)
+    const correctCount = letters.split('').reduce((count, letter, index) => count + (typedAnswer[index] === letter ? 1 : 0), 0)
+    const accuracy = Math.round((correctCount / letters.length) * 100)
+    const passed = correctCount === letters.length
+    const attempt: SharpnessRowAttempt = {
+      round: rowIndex + 1,
+      letters,
+      typedAnswer,
+      fontSizePx: fontSize,
+      correctCount,
+      accuracy,
+      responseTimeMs: Math.round(performance.now() - roundStartedAt),
+      passed,
+    }
+    const nextAttempts = [...attempts, attempt]
+
+    const thresholdFound = sharpnessThresholdReady(nextAttempts)
+    const safetyLimitReached = nextAttempts.length >= SHARPNESS_MAX_ATTEMPTS || repeatedBoundaryResult(nextAttempts, rowIndex === SHARPNESS_MAX_ROWS - 1, rowIndex === 0)
+
+    if (!thresholdFound && !safetyLimitReached) {
+      setAttempts(nextAttempts)
+      setRowIndex((current) => passed ? Math.min(current + 1, SHARPNESS_MAX_ROWS - 1) : Math.max(current - 1, 0))
+      setLetters(randomSharpnessRow())
+      setAnswer('')
+      setFeedback(passed ? 'Correct. The next row is smaller.' : 'Miss recorded. Making the next row larger to bracket your threshold.')
+      setRoundStartedAt(performance.now())
+      return
+    }
+
+    const lastPassed = [...nextAttempts].reverse().find((item) => item.passed) ?? null
+    const firstFailed = nextAttempts.find((item) => !item.passed) ?? attempt
+    const smallestPassedFontSize = nextAttempts.filter((item) => item.passed).reduce<number | null>((smallest, item) => smallest === null ? item.fontSizePx : Math.min(smallest, item.fontSizePx), null)
+    const estimatedThresholdFontSize = smallestPassedFontSize !== null
+      ? Math.round(((smallestPassedFontSize + firstFailed.fontSizePx) / 2) * 10) / 10
+      : firstFailed.fontSizePx
+    const responseTimes = nextAttempts.map((item) => item.responseTimeMs)
+    const conditions = captureTestConditions()
+    const confidence = safetyLimitReached && !thresholdFound ? 55 : Math.min(98, Math.max(72, 70 + (nextAttempts.length * 1.8) + countSharpnessReversals(nextAttempts) * 6 - Math.max(0, 6 - correctCount) * 2))
+    const payload: SharpnessThresholdPayload = {
+      testType: 'visual_sharpness',
+      date: conditions.dateTime,
+      deviceModel: conditions.deviceModel,
+      screenSize: conditions.screenSize,
+      brightness: conditions.brightness,
+      viewingDistanceEstimate: conditions.viewingDistanceEstimate,
+      eyeMode,
+      rowsCompleted: nextAttempts.length,
+      smallestPassedFontSize,
+      firstFailedFontSize: firstFailed.fontSizePx,
+      finalAccuracy: firstFailed.accuracy,
+      responseTimes,
+      lastFullyCorrectRow: lastPassed,
+      firstFailedRow: firstFailed,
+      estimatedThresholdFontSize,
+      confidence,
+    }
+
+    onRecord(estimatedThresholdFontSize, {
+      confidence,
+      conditions,
+      note: safetyLimitReached && !thresholdFound ? LOW_CONFIDENCE_THRESHOLD_NOTE : `Sharpness threshold estimated at ${estimatedThresholdFontSize}px between smallest passed row ${smallestPassedFontSize ?? '—'}px and first failed row ${firstFailed.fontSizePx}px. Confidence ${confidence}%.`,
+      sharpnessThreshold: payload,
+    })
+  }
+
+  if (!started) {
+    return (
+      <div className="screen test-screen sharpness-screen">
+        <button className="text-button" onClick={onCancel}>Cancel</button>
+        <p className="small-muted">{step + 1} of {total} · Smallest readable row</p>
+        <h1>Visual Sharpness</h1>
+        <section className="sharpness-instructions glass-card">
+          <p className="eyebrow">Before you start</p>
+          <ul>
+            <li>Hold your phone at a comfortable, consistent distance.</li>
+            <li>Cover one eye if testing each eye separately.</li>
+            <li>Type the letters you can read.</li>
+            <li>We’ll gradually make them smaller.</li>
+          </ul>
+        </section>
+        <div className="eye-mode-picker" aria-label="Choose eye mode">
+          {(['both', 'left', 'right'] as SharpnessEyeMode[]).map((mode) => (
+            <button className={eyeMode === mode ? 'active' : ''} key={mode} onClick={() => setEyeMode(mode)}>
+              {mode === 'both' ? 'Both eyes' : mode === 'left' ? 'Left eye' : 'Right eye'}
+            </button>
+          ))}
+        </div>
+        <button className="glass-button primary sharpness-start" onClick={() => {
+          setStarted(true)
+          setRoundStartedAt(performance.now())
+        }}>Start smallest-row test</button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="screen test-screen sharpness-screen">
+      <button className="text-button" onClick={onCancel}>Cancel</button>
+      <p className="small-muted">{step + 1} of {total} · Difficulty increasing</p>
+      <div className="difficulty-track" aria-label={`Difficulty ${progress}%`}>
+        <span style={{ width: `${progress}%` }} />
+      </div>
+      <section className="sharpness-row-stage glass-card">
+        <p className="eyebrow">Row {rowIndex + 1} · {fontSize}px</p>
+        <div className="letter-row" style={{ fontSize }}>{letters.split('').join(' ')}</div>
+      </section>
+      <label className="sharpness-answer">
+        <span>Type the letters you see</span>
+        <input
+          autoCapitalize="characters"
+          autoComplete="off"
+          autoCorrect="off"
+          autoFocus
+          enterKeyHint="done"
+          inputMode="text"
+          maxLength={6}
+          spellCheck={false}
+          value={answer}
+          onChange={(event) => setAnswer(normalizeAnswer(event.target.value))}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && answer.length > 0) submitRow()
+          }}
+          placeholder="KDMRTA"
+        />
+      </label>
+      {feedback && <p className="sharpness-feedback">{feedback}</p>}
+      <div className="sharpness-stats">
+        <span>Rows completed: {attempts.length}</span>
+        <span>Last passed: {attempts.filter((item) => item.passed).at(-1)?.fontSizePx ?? '—'}px</span>
+      </div>
+      <button className="glass-button primary" disabled={answer.length === 0} onClick={submitRow}>Submit row</button>
+      <p className="calm-note">No medical claims — this tracks your readable threshold over time on this device.</p>
+    </div>
+  )
+}
+
+function BottomNav({ tab, setTab }: { tab: string; setTab: (tab: 'home' | 'explore' | 'settings' | 'reliability' | 'betaDiagnostics') => void }) {
+  const items = [
+    { id: 'home', label: 'Home', icon: '⌂' },
+    { id: 'explore', label: 'Explore', icon: '◉' },
+    { id: 'settings', label: 'Settings', icon: '⚙' },
+  ] as const
+
+  return (
+    <nav className="bottom-nav glass-card" aria-label="Bottom navigation">
+      {items.map((item) => (
+        <button className={tab === item.id ? 'active' : ''} key={item.id} onClick={() => setTab(item.id)}>
+          <span>{item.icon}</span>
+          {item.label}
+        </button>
+      ))}
+    </nav>
+  )
+}
+
+function Metric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="metric">
+      <strong>{value}</strong>
+      <span>{label}</span>
+    </div>
+  )
+}
+
+function formatDuration(milliseconds: number) {
+  const totalMinutes = Math.max(0, Math.ceil(milliseconds / 60_000))
+  const hours = Math.floor(totalMinutes / 60)
+  const minutes = totalMinutes % 60
+  if (hours <= 0) return `${minutes}m`
+  return `${hours}h ${minutes.toString().padStart(2, '0')}m`
+}
+
+function baselineStepLabel(count: number) {
+  if (count === 0) return 'Baseline Starting'
+  if (count === 1) return 'Snapshot 1 Complete'
+  return 'Snapshot 2 Complete'
+}
+
+function iconFor(id: CapabilityId) {
+  const icons: Record<CapabilityId, string> = {
+    sharpness: 'A',
+    contrast: '◐',
+    peripheralAwareness: '◠',
+    visualResponse: '↯',
+  }
+  return icons[id]
+}
+
+export default App

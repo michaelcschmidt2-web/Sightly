@@ -1,0 +1,19 @@
+{
+  "name": "Sightly",
+  "short_name": "Sightly",
+  "description": "Track personal vision snapshots over time with non-medical trend-focused measurements.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7f9ff",
+  "theme_color": "#eef5ff",
+  "icons": [
+    {
+      "src": "/icons.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

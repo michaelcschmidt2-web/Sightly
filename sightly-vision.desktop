@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Sightly Vision
+Comment=Launch the Sightly vision app
+Exec=/home/mike/agent-workspace/sightly/run-sightly-desktop.sh
+Terminal=false
+Categories=Utility;Health;
+StartupNotify=true
