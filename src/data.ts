@@ -30,7 +30,7 @@ export function calculateBaselineCalibration(checks: VisionCheck[], typicalRange
       confidence: 0,
       typicalRange: null,
       consistency: 'building',
-      message: 'Build your baseline with 3 full snapshots spaced at least 12 hours apart.',
+      message: 'Build your baseline with 3 calm snapshots.',
       optionalFourthSnapshotRecommended: false,
     }
   }
@@ -51,7 +51,7 @@ export function calculateBaselineCalibration(checks: VisionCheck[], typicalRange
     confidence: Math.min(99, Math.round(averageConfidence * 0.72 + consistencyScore * 0.28)),
     typicalRange,
     consistency,
-    message: consistency === 'high' ? 'Baseline Established' : 'Additional calibration may improve accuracy.',
+    message: consistency === 'high' ? 'Baseline Established' : 'One more calibration snapshot may help.',
     optionalFourthSnapshotRecommended: consistency === 'needs-more-data',
   }
 }
@@ -61,7 +61,7 @@ export const visionTools: VisionTool[] = [
     id: 'visualSharpness',
     capability: 'sharpness',
     title: 'Sharpness',
-    description: 'Finds the smallest six-letter row you can type correctly without multiple choice.',
+    description: 'Find the smallest row you can read comfortably.',
     metricLabel: 'Smallest readable row',
     unit: 'px',
     betterDirection: 'lower',
@@ -72,7 +72,7 @@ export const visionTools: VisionTool[] = [
     id: 'contrastSensitivity',
     capability: 'contrast',
     title: 'Contrast',
-    description: 'Finds the faintest Landolt-C opening direction you can reliably identify.',
+    description: 'Notice the faintest ring opening you can identify.',
     metricLabel: 'Contrast threshold',
     unit: '%',
     betterDirection: 'lower',
@@ -83,7 +83,7 @@ export const visionTools: VisionTool[] = [
     id: 'peripheralAwareness',
     capability: 'peripheralAwareness',
     title: 'Peripheral Awareness',
-    description: 'Measures edge stimulus detection while you keep focus on a center dot.',
+    description: 'Notice soft cues while keeping your eyes centered.',
     metricLabel: 'Peripheral threshold',
     unit: '',
     betterDirection: 'higher',
@@ -97,7 +97,7 @@ export const advancedVisionTools: VisionTool[] = [
     id: 'visualResponse',
     capability: 'visualResponse',
     title: 'Recognition Threshold',
-    description: 'Advanced visual-processing assessment. Not included in the monthly Vision Score.',
+    description: 'Learn how briefly a symbol can appear and still feel recognizable.',
     metricLabel: 'Recognition threshold',
     unit: 'ms',
     betterDirection: 'lower',
@@ -112,42 +112,42 @@ export const visionProfileItems: VisionProfileItem[] = [
     id: 'recognitionThreshold',
     label: 'Recognition Threshold',
     result: 'Advanced visual processing',
-    description: 'Measures symbol recognition and attention separately from the monthly Vision Score.',
+    description: 'Shows symbol recognition separately from the monthly score.',
     affectsVisionScore: false,
   },
   {
     id: 'colorVision',
     label: 'Color Vision',
     result: 'Ishihara profile',
-    description: 'Informational color-pattern screening. Stored in Vision Profile only.',
+    description: 'Informational color-pattern context.',
     affectsVisionScore: false,
   },
   {
     id: 'eyeDominance',
     label: 'Eye Dominance',
     result: 'Dominant-eye note',
-    description: 'Useful context for aiming and framing tasks. Not part of monthly score.',
+    description: 'Helpful context for aiming and framing.',
     affectsVisionScore: false,
   },
   {
     id: 'amslerGrid',
     label: 'Amsler Grid',
     result: 'Advanced grid screening',
-    description: 'Informational central-grid screen. Stored outside the monthly Vision Score.',
+    description: 'Informational central-grid context.',
     affectsVisionScore: false,
   },
   {
     id: 'astigmatism',
     label: 'Astigmatism Screening',
     result: 'Line-distortion screen',
-    description: 'An informational profile flag for follow-up context. Not scored.',
+    description: 'Informational line-distortion context.',
     affectsVisionScore: false,
   },
   {
     id: 'nightVision',
     label: 'Night Vision',
     result: 'Low-light profile',
-    description: 'Tracks subjective low-light context separately from Vision Score.',
+    description: 'Low-light context kept outside the score.',
     affectsVisionScore: false,
   },
 ]
@@ -243,7 +243,7 @@ function makeResult(
     normalizedScore,
     confidence,
     conditions,
-    note: 'Measured capability score. Compared only against your own baseline.',
+    note: 'Measured snapshot signal. Compared only with your own baseline.',
     ...details,
   }
 }
@@ -351,7 +351,7 @@ export function createDemoState(): SightlyState {
     ...emptyState,
     onboarded: true,
     checks: checksWithoutDerived,
-    lastNotification: "It's time for your monthly vision check.",
+    lastNotification: "It’s time for your monthly vision check-in.",
   })
 }
 

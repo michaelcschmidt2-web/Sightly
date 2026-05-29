@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type TouchEvent } from 'react'
 import './App.css'
 import type { AuthMode, BetaFeedbackTag, CapabilityId, ContrastDirection, ContrastThresholdPayload, ContrastTrial, CorrectionProfile, EyeFatigueLevel, LastEyeExamRange, PeripheralAwarenessPayload, PeripheralDirection, PeripheralTrial, SharpnessEyeMode, SharpnessRowAttempt, SharpnessThresholdPayload, SnapshotAnalytics, SightlyState, SnapshotReadiness, TestResult, ToolId, VisionCorrectionUsage, VisionTool, VisualChoicePayload, VisualChoiceSymbol, VisualChoiceTrial } from './types'
 import {
@@ -468,7 +468,7 @@ function RecoveryScreen({ onContinue, onDiscard }: { onContinue: () => void; onD
         <div className="screen onboarding-screen baseline-step">
           <p className="eyebrow">Interrupted Snapshot</p>
           <h1>Resume Snapshot?</h1>
-          <p className="onboarding-subtitle">Sightly saved your active snapshot state so you do not silently lose progress after refresh or reopen.</p>
+          <p className="onboarding-subtitle">Your snapshot is saved on this device. Continue when you’re ready.</p>
           <button className="glass-button primary setup-next" onClick={onContinue}>Continue</button>
           <button className="glass-button quiet setup-next" onClick={onDiscard}>Discard</button>
         </div>
@@ -494,64 +494,65 @@ const lastExamOptions: Array<{ value: LastEyeExamRange; label: string }> = [
 
 const introSlides = [
   {
-    eyebrow: 'Sightly',
-    title: 'See what eyes miss.',
-    body: 'Track your vision over time with simple monthly snapshots.',
+    title: 'Sightly',
+    subtitle: 'See what eyes miss.',
+    body: [
+      'Vision often changes gradually enough that you don’t notice it happening.',
+      'Sightly helps you track changes over time with simple vision snapshots.',
+    ],
     visual: 'orb',
+    cta: 'Swipe to continue →',
   },
   {
-    eyebrow: 'Build Your Baseline',
-    title: 'Learn your normal range.',
-    body: 'Sightly needs 3 snapshots to learn your normal range. Your score is compared to your own baseline, not other people. Your first few snapshots help Sightly learn your normal visual range. Future snapshots are compared against you — not everyone else.',
-    visual: 'nodes',
+    title: 'Build Your Vision Baseline',
+    body: [
+      'Sightly learns what is normal for you through a few quick snapshots.',
+      'Over time, you’ll be able to spot trends, changes, and patterns that might otherwise go unnoticed.',
+    ],
+    visual: 'baseline',
+    cta: 'Next',
   },
   {
-    eyebrow: 'Track Changes Over Time',
-    title: 'Notice the gradual shifts.',
-    body: 'Sightly helps you notice gradual changes you may not realize are happening.',
-    visual: 'journey',
-  },
-  {
-    eyebrow: 'Consistency Matters',
-    title: 'Keep conditions steady.',
-    body: 'Testing under similar conditions improves reliability and helps Sightly produce more meaningful results over time.',
-    note: 'Sightly tracks visual performance trends and does not replace professional eye care.',
-    visual: 'consistency',
+    title: 'Your Vision Journey Starts Here',
+    body: [
+      'Track your vision over time with simple check-ins designed to help you notice gradual changes.',
+      'Create an account to begin building your baseline.',
+    ],
+    visual: 'timeline',
+    cta: 'Next',
   },
 ]
 
+const authActions: Array<{ mode: AuthMode; label: string; primary?: boolean }> = [
+  { mode: 'apple', label: 'Continue with Apple', primary: true },
+  { mode: 'google', label: 'Continue with Google' },
+  { mode: 'email', label: 'Continue with Email' },
+  { mode: 'guest', label: 'Continue as Guest' },
+]
+
 function IntroVisual({ type }: { type: string }) {
-  if (type === 'nodes') {
+  if (type === 'baseline') {
     return (
-      <div className="intro-visual intro-nodes" aria-hidden="true">
-        <span className="snapshot-node node-a" />
-        <span className="snapshot-node node-b" />
-        <span className="snapshot-node node-c" />
-        <span className="node-connection connection-a" />
-        <span className="node-connection connection-b" />
+      <div className="intro-visual intro-baseline-path" aria-hidden="true">
+        {['Snapshot 1', 'Snapshot 2', 'Snapshot 3', 'Your Baseline'].map((label, index) => (
+          <div className="snapshot-node milestone-card" key={label} style={{ '--delay': `${index * 0.12}s` } as CSSProperties}>
+            <span>{label}</span>
+          </div>
+        ))}
+        <span className="node-connection baseline-connection" />
       </div>
     )
   }
 
-  if (type === 'journey') {
+  if (type === 'timeline') {
     return (
-      <div className="intro-visual intro-journey" aria-hidden="true">
-        {['Baseline', 'New Glasses', 'Current Vision'].map((label, index) => (
-          <div className="journey-marker" key={label} style={{ '--delay': `${index * 0.16}s` } as CSSProperties}>
+      <div className="intro-visual intro-journey-timeline" aria-hidden="true">
+        {['Today', 'Baseline Established', 'Vision Journey', 'Current Snapshot'].map((label, index) => (
+          <div className="journey-marker timeline-card" key={label} style={{ '--delay': `${index * 0.14}s` } as CSSProperties}>
             <span />
             <strong>{label}</strong>
           </div>
         ))}
-      </div>
-    )
-  }
-
-  if (type === 'consistency') {
-    return (
-      <div className="intro-visual intro-consistency" aria-hidden="true">
-        <div className="phone-brightness"><span className="brightness-sheen" /></div>
-        <div className="floating-snapshot-card card-one">Snapshot</div>
-        <div className="floating-snapshot-card card-two">Stable light</div>
       </div>
     )
   }
@@ -563,29 +564,22 @@ function IntroVisual({ type }: { type: string }) {
   )
 }
 
-function SightlyIntroExperience({ onBeginSetup }: { onBeginSetup: () => void }) {
+function SightlyIntroExperience({ onBeginSetup }: { onBeginSetup: (authMode: AuthMode) => void }) {
   const [introStep, setIntroStep] = useState(0)
-  const isWelcomeStep = introStep === introSlides.length
-  const slide = introSlides[Math.min(introStep, introSlides.length - 1)]
+  const touchStartX = useRef<number | null>(null)
 
-  if (isWelcomeStep) {
-    return (
-      <main className="app-shell welcome-shell onboarding-shell intro-shell">
-        <div className="ambient ambient-a" />
-        <div className="ambient ambient-b" />
-        <section className="phone-frame onboarding-frame intro-frame">
-          <div className="screen intro-screen intro-welcome-screen">
-            <IntroVisual type="orb" />
-            <div className="intro-copy welcome-intro-copy">
-              <p className="eyebrow">Welcome to Sightly</p>
-              <h1>Welcome to Sightly</h1>
-              <p className="onboarding-subtitle">Set up your profile, then begin your first calm baseline snapshot.</p>
-            </div>
-            <button className="glass-button primary setup-next intro-next" onClick={onBeginSetup}>Begin Setup</button>
-          </div>
-        </section>
-      </main>
-    )
+  const goToSlide = (index: number) => setIntroStep(Math.max(0, Math.min(index, introSlides.length - 1)))
+  const nextSlide = () => goToSlide(introStep + 1)
+  const onTouchStart = (event: TouchEvent<HTMLDivElement>) => {
+    touchStartX.current = event.touches[0]?.clientX ?? null
+  }
+  const onTouchEnd = (event: TouchEvent<HTMLDivElement>) => {
+    if (touchStartX.current === null) return
+    const delta = touchStartX.current - (event.changedTouches[0]?.clientX ?? touchStartX.current)
+    touchStartX.current = null
+    if (Math.abs(delta) < 38) return
+    if (delta > 0) nextSlide()
+    else goToSlide(introStep - 1)
   }
 
   return (
@@ -593,23 +587,58 @@ function SightlyIntroExperience({ onBeginSetup }: { onBeginSetup: () => void }) 
       <div className="ambient ambient-a" />
       <div className="ambient ambient-b" />
       <section className="phone-frame onboarding-frame intro-frame">
-        <div className="screen intro-screen" key={slide.title}>
+        <div className="screen intro-screen carousel-screen">
           <div className="intro-topline">
             <span>{introStep + 1} / {introSlides.length}</span>
           </div>
-          <IntroVisual type={slide.visual} />
-          <div className="intro-copy">
-            <p className="eyebrow">{slide.eyebrow}</p>
-            <h1>{slide.title}</h1>
-            <p className="onboarding-subtitle">{slide.body}</p>
-            {slide.note && <p className="intro-note">{slide.note}</p>}
+          <div
+            className="intro-carousel"
+            onTouchStart={onTouchStart}
+            onTouchEnd={onTouchEnd}
+            style={{ '--intro-step': introStep } as CSSProperties}
+            aria-live="polite"
+          >
+            {introSlides.map((slide, index) => (
+              <article className={`intro-slide-card intro-slide-${slide.visual} glass-card`} key={slide.title} aria-hidden={index !== introStep}>
+                <IntroVisual type={slide.visual} />
+                <div className="intro-copy">
+                  <h1>{slide.title}</h1>
+                  {slide.subtitle && <p className="intro-subtitle">{slide.subtitle}</p>}
+                  <div className="intro-body-copy">
+                    {slide.body.map((paragraph) => <p key={paragraph}>{paragraph}</p>)}
+                  </div>
+                </div>
+                {index === 2 && (
+                  <div className="onboarding-actions intro-auth-actions">
+                    {authActions.map((action) => (
+                      <button
+                        className={action.primary ? 'glass-button primary' : 'glass-button'}
+                        key={action.mode}
+                        onClick={() => onBeginSetup(action.mode)}
+                      >
+                        {action.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </article>
+            ))}
           </div>
           <div className="intro-progress" aria-label="Intro progress">
-            {introSlides.map((item, index) => <span className={index === introStep ? 'active' : ''} key={item.title} />)}
+            {introSlides.map((item, index) => (
+              <button
+                aria-label={`Go to slide ${index + 1}`}
+                className={index === introStep ? 'active' : ''}
+                key={item.title}
+                onClick={() => goToSlide(index)}
+              />
+            ))}
           </div>
-          <button className="glass-button primary setup-next intro-next" onClick={() => setIntroStep((current) => current + 1)}>
-            Continue
-          </button>
+          {introStep < introSlides.length - 1 && (
+            <button className="glass-button primary setup-next intro-next" onClick={nextSlide}>
+              {introSlides[introStep].cta}
+            </button>
+          )}
         </div>
       </section>
     </main>
@@ -641,7 +670,11 @@ function FirstRunOnboarding({ onComplete }: { onComplete: (profile: OnboardingPr
   }
 
   if (!introComplete) {
-    return <SightlyIntroExperience onBeginSetup={() => setIntroComplete(true)} />
+    return <SightlyIntroExperience onBeginSetup={(authMode) => {
+      updateProfile({ authMode })
+      setStep(1)
+      setIntroComplete(true)
+    }} />
   }
 
   return (
@@ -654,14 +687,14 @@ function FirstRunOnboarding({ onComplete }: { onComplete: (profile: OnboardingPr
             <div className="onboarding-orb" aria-hidden="true" />
             <p className="eyebrow">Sightly</p>
             <h1>See what eyes miss.</h1>
-            <p className="onboarding-subtitle">Track your vision over time with simple monthly snapshots.</p>
+            <p className="onboarding-subtitle">Notice how your vision changes over time.</p>
             <div className="onboarding-actions">
               <button className="glass-button primary" onClick={() => { updateProfile({ authMode: 'apple' }); next() }}>Continue with Apple</button>
               <button className="glass-button" onClick={() => { updateProfile({ authMode: 'google' }); next() }}>Continue with Google</button>
               <button className="glass-button" onClick={() => { updateProfile({ authMode: 'email' }); next() }}>Continue with Email</button>
               <button className="text-button centered" onClick={() => { updateProfile({ authMode: 'guest' }); next() }}>Continue as Guest</button>
             </div>
-            <p className="disclaimer">Sightly tracks visual performance over time and does not replace a professional eye exam.</p>
+            <p className="disclaimer">Sightly shows trends and does not replace eye care.</p>
           </div>
         )}
 
@@ -695,7 +728,7 @@ function FirstRunOnboarding({ onComplete }: { onComplete: (profile: OnboardingPr
             </div>
             <div className="setup-note glass-card">
               <h2>Are you wearing your usual vision correction today?</h2>
-              <p>For the most useful baseline, take snapshots under similar conditions each time.</p>
+              <p>Use similar conditions for the most reliable baseline.</p>
               <div className="choice-grid setup-grid">
                 {correctionOptions.map((option) => <button className={profile.usualCorrectionToday === option.value ? 'selected' : ''} key={option.value} onClick={() => updateProfile({ usualCorrectionToday: option.value })}>{option.label}</button>)}
               </div>
@@ -708,9 +741,9 @@ function FirstRunOnboarding({ onComplete }: { onComplete: (profile: OnboardingPr
           <div className="screen onboarding-screen baseline-step">
             <p className="eyebrow">Build Your Baseline</p>
             <h1>Learn your normal range.</h1>
-            <p className="onboarding-subtitle">Sightly needs 3 snapshots to learn your normal range.</p>
-            <p>Your score is compared to your own baseline, not other people. Complete your first 3 snapshots over separate sessions to unlock your Vision Score.</p>
-            <div className="baseline-pill glass-card"><span>Snapshot 1 of 3</span><strong>Baseline Starting</strong></div>
+            <p className="onboarding-subtitle">Three snapshots help Sightly learn what is typical for you.</p>
+            <p className="quiet-copy">Future snapshots compare against your own baseline.</p>
+            <div className="baseline-pill glass-card"><span>Snapshot 1 of 3</span><strong>Ready to Begin</strong></div>
             <button className="glass-button primary setup-next" onClick={next}>Start First Snapshot</button>
           </div>
         )}
@@ -718,7 +751,7 @@ function FirstRunOnboarding({ onComplete }: { onComplete: (profile: OnboardingPr
         {step === 4 && (
           <div className="screen onboarding-screen baseline-step">
             <p className="eyebrow">Ready</p>
-            <h1>Begin with calm conditions.</h1>
+            <h1>Start with steady conditions.</h1>
             <div className="readiness-list onboarding-readiness">
               {readinessChecklist.map((item) => <div key={item}><span>✓</span>{item}</div>)}
             </div>
@@ -732,11 +765,11 @@ function FirstRunOnboarding({ onComplete }: { onComplete: (profile: OnboardingPr
 }
 
 const readinessChecklist = [
-  'Turn brightness up',
-  'Use a well-lit room',
+  'Set brightness high',
+  'Choose steady lighting',
   'Hold phone at arm’s length',
   'Wear your usual glasses or contacts',
-  'Avoid testing when your eyes feel unusually tired',
+  'Skip if your eyes feel unusually tired',
 ]
 
 const peripheralAnswerOptions: Array<{ value: PeripheralDirection; label: string }> = [
@@ -754,7 +787,7 @@ function testProgressLabel(step: number, total: number) {
   if (total <= 1) return 'Finding your threshold'
   if (step === total - 1) return 'Last step'
   if (step === total - 2) return 'Almost there'
-  return `Test ${step + 1} of ${total}`
+  return `Snapshot step ${step + 1} of ${total}`
 }
 
 const fatigueOptions: Array<{ value: EyeFatigueLevel; label: string }> = [
@@ -786,12 +819,12 @@ function SnapshotReadinessScreen({
     <div className="screen snapshot-prep-screen">
       <button className="text-button" onClick={onCancel}>Cancel</button>
       <header className="top-header compact snapshot-readiness-header">
-        <h1>Monthly Vision Snapshot</h1>
-        <p>For the most consistent results, use similar conditions each time.</p>
+        <h1>Let’s check in.</h1>
+        <p>Use similar conditions for the most reliable results.</p>
       </header>
 
       <section className="prep-card glass-card preparation-card">
-        <h2>Before You Begin</h2>
+        <h2>Before you begin</h2>
         <div className="readiness-list" aria-label="Snapshot readiness checklist">
           {readinessChecklist.map((item) => (
             <div key={item}><span>✓</span>{item}</div>
@@ -799,14 +832,14 @@ function SnapshotReadinessScreen({
         </div>
         <label className="distance-confirm">
           <input checked={armLengthConfirmed} onChange={(event) => setArmLengthConfirmed(event.target.checked)} type="checkbox" />
-          <span>I'm holding my phone at arm's length</span>
+          <span>I’m holding my phone at arm’s length</span>
         </label>
       </section>
 
       <section className="prep-section prep-questions">
         <fieldset>
-          <legend>Today's Conditions</legend>
-          <p>How are your eyes feeling today?</p>
+          <legend>Today’s conditions</legend>
+          <p>How do your eyes feel?</p>
           <div className="choice-grid generous">
             {fatigueOptions.map((option) => (
               <button
@@ -824,8 +857,8 @@ function SnapshotReadinessScreen({
 
       <section className="prep-section prep-questions">
         <fieldset>
-          <legend>Vision Correction</legend>
-          <p>Are you wearing your usual vision correction?</p>
+          <legend>Vision correction</legend>
+          <p>Using your usual correction?</p>
           <div className="choice-grid generous">
             {correctionOptions.map((option) => (
               <button
@@ -842,10 +875,10 @@ function SnapshotReadinessScreen({
       </section>
 
       <section className="prep-confidence glass-card">
-        <p className="eyebrow">Measurement Confidence</p>
-        <h2>Tracked with every snapshot</h2>
+        <p className="eyebrow">Snapshot Confidence</p>
+        <h2>Captured quietly</h2>
         <strong>98%</strong>
-        <p>Brightness, device model, screen size, orientation, time of day, battery saver mode, eye fatigue, and vision correction are recorded to improve trend reliability.</p>
+        <p>Device, light, and setup context help make trends easier to trust.</p>
       </section>
 
       <button className="glass-button primary begin-snapshot" onClick={() => onBegin({ eyeFatigue, visionCorrection, armLengthConfirmed })}>
@@ -941,7 +974,7 @@ function HomeScreen({
           <div>
             <p className="section-kicker">Build Your Baseline</p>
             <h2>{Math.min(completedChecks, CALIBRATION_REQUIRED_SNAPSHOTS)} of 3 snapshots complete</h2>
-            <p>Sightly needs 3 snapshots to learn your normal range. Your score is compared to your own baseline, not other people.</p>
+            <p>Three snapshots help Sightly learn your typical range.</p>
           </div>
           <div className="next-snapshot-card glass-card">
             <span>Next Snapshot Available In:</span>
@@ -955,7 +988,7 @@ function HomeScreen({
           <div>
             <p className="section-kicker">Baseline Calibration</p>
             <h2>{calibration.message}</h2>
-            <p>{calibration.consistency === 'high' ? 'Your first 3 snapshots were highly consistent.' : 'Additional calibration may improve accuracy.'}</p>
+            <p>{calibration.consistency === 'high' ? 'Your first 3 snapshots were consistent.' : 'Additional calibration may improve accuracy.'}</p>
           </div>
           <div className="baseline-metrics-grid">
             <Metric label="Average" value={calibration.average ?? '—'} />
@@ -988,14 +1021,14 @@ function HomeScreen({
       )}
 
       <button className="glass-button check-button reference-check quiet-check" disabled={baselineCtaDisabled} onClick={startCheck}>
-        <strong>{baselineReady ? (calibration.optionalFourthSnapshotRecommended ? 'Take Optional Calibration Snapshot' : 'Check My Vision') : completedChecks === 0 ? 'Start First Snapshot' : 'Continue Baseline'}</strong>
+        <strong>{baselineReady ? (calibration.optionalFourthSnapshotRecommended ? 'Add Calibration Snapshot' : 'Check In') : completedChecks === 0 ? 'Start First Snapshot' : 'Continue Baseline'}</strong>
       </button>
 
       {!baselineReady && latestCheck && (
         <section className="early-results-section" aria-label="Early Results">
           <p className="section-kicker">Early Results</p>
           <h2>Snapshot {completedChecks} of 3 complete.</h2>
-          <p>Complete {Math.max(0, 3 - completedChecks)} more snapshot{3 - completedChecks === 1 ? '' : 's'} to unlock your Vision Score and Typical Range.</p>
+          <p>{Math.max(0, 3 - completedChecks)} more snapshot{3 - completedChecks === 1 ? '' : 's'} until Sightly learns your typical range.</p>
           <div className="early-result-list">
             {latestCheck.testResults.filter((result) => result.capability !== 'visualResponse').map((result) => (
               <div key={result.id}><span>{result.metricLabel}</span><b>{formatMeasurement(result)}</b></div>
@@ -1105,7 +1138,7 @@ function ExploreScreen({ checks, startTool }: { checks: SightlyState['checks']; 
     <div className="screen explore-screen">
       <header className="top-header compact">
         <p className="small-muted">Explore</p>
-        <h1>Assessments</h1>
+        <h1>Explore</h1>
       </header>
       <div className="tool-grid">
         {visionTools.map((tool) => {
@@ -1129,7 +1162,7 @@ function ExploreScreen({ checks, startTool }: { checks: SightlyState['checks']; 
       <section className="advanced-tests-section" aria-label="Advanced Tests">
         <p className="section-kicker">Advanced Tests</p>
         <h2>Not included in Vision Score</h2>
-        <p>Recognition Threshold, Color Vision (Ishihara), Amsler Grid, Astigmatism Screening, and future visual-processing assessments live here instead of the monthly score.</p>
+        <p>Standalone checks for learning more. They do not affect your monthly score.</p>
         <div className="tool-grid advanced-tool-grid">
           {advancedVisionTools.map((tool) => (
             <button className="tool-card glass-card advanced-tool-card" key={tool.id} onClick={() => startTool(tool)}>
@@ -1202,11 +1235,11 @@ function SettingsScreen({
         <div className="section-heading">
           <div>
             <p className="eyebrow">Vision Profile</p>
-            <h2>Informational screens</h2>
+            <h2>Vision context</h2>
           </div>
           <span>Not scored</span>
         </div>
-        <p className="profile-note">These checks describe your visual profile, but they do not affect monthly Vision Score calculations.</p>
+        <p className="profile-note">These items add context. They do not affect your monthly score.</p>
         <div className="profile-grid">
           {state.visionProfile.map((item) => (
             <article key={item.id} className="profile-item">
@@ -1669,13 +1702,13 @@ function PeripheralAwarenessTest({
         <section className="sharpness-instructions peripheral-instructions glass-card">
           <p className="eyebrow">Before you start</p>
           <ul>
-            <li>Keep your eyes focused on the center dot throughout the test.</li>
-            <li>Only one soft cue appears at a time around the edge.</li>
+            <li>Keep your eyes gently on the center dot.</li>
+            <li>One soft cue appears near the edge.</li>
             <li>Tap the location where it appeared.</li>
-            <li>Difficulty changes quietly as Sightly finds your threshold.</li>
+            <li>Sightly adjusts quietly as it learns your threshold.</li>
           </ul>
         </section>
-        <button className="glass-button primary sharpness-start" onClick={() => setStarted(true)}>Start peripheral threshold</button>
+        <button className="glass-button primary sharpness-start" onClick={() => setStarted(true)}>Begin peripheral check</button>
       </div>
     )
   }
@@ -1704,7 +1737,7 @@ function PeripheralAwarenessTest({
         )}
       </section>
       <h2>Where did the dot appear?</h2>
-      <p>Keep your eyes on the center dot. One dot appears per round.</p>
+      <p>Keep your eyes centered. One dot appears each round.</p>
       <div className="peripheral-location-grid" aria-label="Choose where the dot appeared">
         {peripheralAnswerOptions.map((option) => (
           <button className="glass-button" disabled={!canAnswer} key={option.value} onClick={(event) => recordTap(option.value, event.timeStamp)}>{option.label}</button>
@@ -1928,13 +1961,13 @@ function VisualChoiceReactionTest({
         <section className="sharpness-instructions glass-card visual-response-instructions">
           <h2>How quickly can you recognize what you see?</h2>
           <ul>
-            <li>A symbol will briefly appear on screen.</li>
-            <li>Identify the symbol as accurately as possible.</li>
+            <li>A symbol will appear briefly.</li>
+            <li>Choose what you saw.</li>
             <li>Accuracy matters more than speed.</li>
-            <li>Keep your eyes focused near the center of the screen.</li>
+            <li>Keep your eyes near the center.</li>
           </ul>
         </section>
-        <button className="glass-button primary sharpness-start" onClick={() => setStarted(true)}>Begin Test</button>
+        <button className="glass-button primary sharpness-start" onClick={() => setStarted(true)}>Begin check</button>
       </div>
     )
   }
@@ -1982,7 +2015,7 @@ function VisualChoiceReactionTest({
         <div className={`visual-symbol ${phase === 'symbol' ? 'visible' : ''}`}>{phase === 'symbol' ? visualSymbols[symbol] : '•'}</div>
       </section>
       <h2>{phase === 'answer' ? 'Which direction appeared?' : 'Keep your eyes near the center.'}</h2>
-      <p>{phase === 'answer' ? 'Choose what you saw. Accuracy matters more than speed.' : 'A single direction symbol will appear once, then disappear.'}</p>
+      <p>{phase === 'answer' ? 'Choose what you saw.' : 'A direction symbol will appear once.'}</p>
       {feedback && <p className="sharpness-feedback visual-response-feedback">{feedback}</p>}
       <div className="symbol-choice-pad visual-direction-pad" aria-label="Visual response choices">
         {visualSymbolOrder.map((choice) => (
@@ -1997,7 +2030,7 @@ function VisualChoiceReactionTest({
         <span>Exposure: {exposureDurationMs}ms</span>
         <span>Confidence: {confidencePreview}%</span>
       </div>
-      <p className="calm-note">Sightly is estimating the shortest exposure duration you can reliably recognize.</p>
+      <p className="calm-note">Sightly is learning your reliable recognition threshold.</p>
     </div>
   )
 }
@@ -2100,16 +2133,16 @@ function ContrastThresholdTest({
         <section className="sharpness-instructions contrast-instructions glass-card">
           <p className="eyebrow">Before you start</p>
           <ul>
-            <li>Hold your device at a comfortable and consistent distance.</li>
+            <li>Hold your device at a comfortable distance.</li>
             <li>Complete this test in normal lighting.</li>
-            <li>Select the direction of the opening in each ring.</li>
-            <li>Continue until the shapes become difficult to distinguish.</li>
+            <li>Choose where the ring opens.</li>
+            <li>Continue as the ring becomes faint.</li>
           </ul>
         </section>
         <button className="glass-button primary sharpness-start" onClick={() => {
           setStarted(true)
           setRoundStartedAt(performance.now())
-        }}>Start contrast test</button>
+        }}>Begin contrast check</button>
       </div>
     )
   }
@@ -2126,7 +2159,7 @@ function ContrastThresholdTest({
         <div className={`landolt-ring gap-${direction}`} style={{ '--ring-contrast': contrast / 100 } as CSSProperties & Record<'--ring-contrast', number>} aria-label="Landolt C ring" />
       </section>
       <h2>Where is the opening?</h2>
-      <p>Choose the direction, even as the ring fades. Lower thresholds indicate stronger contrast sensitivity.</p>
+      <p>Choose where the ring opens, even when it feels faint.</p>
       {feedback && <p className="sharpness-feedback contrast-feedback">{feedback}</p>}
       <div className="direction-pad" aria-label="Opening direction answers">
         <button className="glass-button direction top" onClick={() => answer('top')}>Top</button>
@@ -2253,10 +2286,10 @@ function SharpnessThresholdTest({
         <section className="sharpness-instructions glass-card">
           <p className="eyebrow">Before you start</p>
           <ul>
-            <li>Hold your phone at a comfortable arm’s length.</li>
-            <li>Try to use the same distance every time.</li>
+            <li>Hold your phone at arm’s length.</li>
+            <li>Use a similar distance each time.</li>
             <li>Enter the 6 letters shown.</li>
-            <li>Typing is the default. Voice entry coming soon.</li>
+            <li>Type what you see.</li>
           </ul>
         </section>
         <div className="eye-mode-picker" aria-label="Choose eye mode">
@@ -2269,7 +2302,7 @@ function SharpnessThresholdTest({
         <button className="glass-button primary sharpness-start" onClick={() => {
           setStarted(true)
           setRoundStartedAt(performance.now())
-        }}>Start smallest-row test</button>
+        }}>Begin sharpness check</button>
       </div>
     )
   }
@@ -2286,7 +2319,7 @@ function SharpnessThresholdTest({
         <div className="letter-row" style={{ fontSize }}>{letters.split('').join(' ')}</div>
       </section>
       <label className="sharpness-answer">
-        <span>Enter the 6 letters shown.</span>
+        <span>Enter the letters shown.</span>
         <div className="sharpness-slots" aria-hidden="true">
           {answerSlots.map((letter, index) => <span key={index}>{letter}</span>)}
         </div>
@@ -2304,10 +2337,10 @@ function SharpnessThresholdTest({
           onKeyDown={(event) => {
             if (event.key === 'Enter' && answer.length > 0) submitRow()
           }}
-          placeholder="Type the letters you see above"
+          placeholder="Letters you see"
           aria-describedby="sharpness-helper"
         />
-        <small id="sharpness-helper">Spaces and lowercase are okay. Voice entry coming soon.</small>
+        <small id="sharpness-helper">Spaces and lowercase are okay.</small>
       </label>
       {feedback && <p className="sharpness-feedback">{feedback}</p>}
       <div className="sharpness-stats">
@@ -2315,7 +2348,7 @@ function SharpnessThresholdTest({
         <span>Last passed: {attempts.filter((item) => item.passed).at(-1)?.fontSizePx ?? '—'}px</span>
       </div>
       <button className="glass-button primary" disabled={answer.length === 0} onClick={submitRow}>Submit row</button>
-      <p className="calm-note">No medical claims — this tracks your readable threshold over time on this device.</p>
+      <p className="calm-note">Tracks your readable threshold over time on this device.</p>
     </div>
   )
 }
