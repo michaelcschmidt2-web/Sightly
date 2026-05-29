@@ -31,6 +31,7 @@ export type TestingCondition = {
 export type SnapshotReadiness = {
   eyeFatigue: EyeFatigueLevel
   visionCorrection: VisionCorrectionUsage
+  armLengthConfirmed: boolean
   checklistConfirmed: boolean
   startedAt: string
 }

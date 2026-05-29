@@ -241,6 +241,7 @@ function App() {
         ...details.conditions,
         eyeFatigue: snapshotReadiness?.eyeFatigue ?? 'normal',
         visionCorrection: snapshotReadiness?.visionCorrection ?? 'notApplicable',
+        viewingDistanceEstimate: snapshotReadiness?.armLengthConfirmed ? 'confirmed arm length' : 'comfortable consistent distance',
       },
     }
 
@@ -501,7 +502,7 @@ const introSlides = [
   {
     eyebrow: 'Build Your Baseline',
     title: 'Learn your normal range.',
-    body: 'Your first few snapshots help Sightly learn your normal visual range. Future snapshots are compared against you — not everyone else.',
+    body: 'Sightly needs 3 snapshots to learn your normal range. Your score is compared to your own baseline, not other people. Your first few snapshots help Sightly learn your normal visual range. Future snapshots are compared against you — not everyone else.',
     visual: 'nodes',
   },
   {
@@ -707,8 +708,8 @@ function FirstRunOnboarding({ onComplete }: { onComplete: (profile: OnboardingPr
           <div className="screen onboarding-screen baseline-step">
             <p className="eyebrow">Build Your Baseline</p>
             <h1>Learn your normal range.</h1>
-            <p className="onboarding-subtitle">Your first 3 snapshots teach Sightly your normal range so later changes are easier to read.</p>
-            <p>Take each baseline snapshot at least 12 hours apart. During calibration, Sightly shows progress only — trend context appears after your baseline is ready.</p>
+            <p className="onboarding-subtitle">Sightly needs 3 snapshots to learn your normal range.</p>
+            <p>Your score is compared to your own baseline, not other people. Complete your first 3 snapshots over separate sessions to unlock your Vision Score.</p>
             <div className="baseline-pill glass-card"><span>Snapshot 1 of 3</span><strong>Baseline Starting</strong></div>
             <button className="glass-button primary setup-next" onClick={next}>Start First Snapshot</button>
           </div>
@@ -731,13 +732,30 @@ function FirstRunOnboarding({ onComplete }: { onComplete: (profile: OnboardingPr
 }
 
 const readinessChecklist = [
-  'Test in a well-lit room',
+  'Turn brightness up',
+  'Use a well-lit room',
+  'Hold phone at arm’s length',
   'Wear your usual glasses or contacts',
-  'Hold your device at a comfortable distance',
-  'Increase screen brightness',
   'Avoid testing when your eyes feel unusually tired',
-  'Complete the test without interruptions',
 ]
+
+const peripheralAnswerOptions: Array<{ value: PeripheralDirection; label: string }> = [
+  { value: 'top', label: 'Top' },
+  { value: 'bottom', label: 'Bottom' },
+  { value: 'left', label: 'Left' },
+  { value: 'right', label: 'Right' },
+  { value: 'upper-left', label: 'Top Left' },
+  { value: 'upper-right', label: 'Top Right' },
+  { value: 'lower-left', label: 'Bottom Left' },
+  { value: 'lower-right', label: 'Bottom Right' },
+]
+
+function testProgressLabel(step: number, total: number) {
+  if (total <= 1) return 'Finding your threshold'
+  if (step === total - 1) return 'Last step'
+  if (step === total - 2) return 'Almost there'
+  return `Test ${step + 1} of ${total}`
+}
 
 const fatigueOptions: Array<{ value: EyeFatigueLevel; label: string }> = [
   { value: 'great', label: 'Great' },
@@ -762,34 +780,34 @@ function SnapshotReadinessScreen({
 }) {
   const [eyeFatigue, setEyeFatigue] = useState<EyeFatigueLevel>('normal')
   const [visionCorrection, setVisionCorrection] = useState<VisionCorrectionUsage>('notApplicable')
+  const [armLengthConfirmed, setArmLengthConfirmed] = useState(false)
 
   return (
     <div className="screen snapshot-prep-screen">
       <button className="text-button" onClick={onCancel}>Cancel</button>
-      <header className="top-header compact">
-        <p className="small-muted">Monthly Vision Snapshot</p>
-        <h1>Prepare your conditions.</h1>
+      <header className="top-header compact snapshot-readiness-header">
+        <h1>Monthly Vision Snapshot</h1>
+        <p>For the most consistent results, use similar conditions each time.</p>
       </header>
 
-      <section className="prep-card glass-card">
-        <h2>Use similar conditions each month for the most consistent results.</h2>
+      <section className="prep-card glass-card preparation-card">
+        <h2>Before You Begin</h2>
         <div className="readiness-list" aria-label="Snapshot readiness checklist">
           {readinessChecklist.map((item) => (
             <div key={item}><span>✓</span>{item}</div>
           ))}
         </div>
+        <label className="distance-confirm">
+          <input checked={armLengthConfirmed} onChange={(event) => setArmLengthConfirmed(event.target.checked)} type="checkbox" />
+          <span>I'm holding my phone at arm's length</span>
+        </label>
       </section>
 
-      <button className="glass-button check-button reference-check begin-snapshot" onClick={() => onBegin({ eyeFatigue, visionCorrection })}>
-        <span className="check-icon">⌾</span>
-        <strong>Begin Snapshot</strong>
-        <span className="chevron">›</span>
-      </button>
-
-      <section className="prep-card glass-card prep-questions">
+      <section className="prep-section prep-questions">
         <fieldset>
-          <legend>How are your eyes feeling today?</legend>
-          <div className="choice-grid">
+          <legend>Today's Conditions</legend>
+          <p>How are your eyes feeling today?</p>
+          <div className="choice-grid generous">
             {fatigueOptions.map((option) => (
               <button
                 className={eyeFatigue === option.value ? 'selected' : ''}
@@ -802,10 +820,13 @@ function SnapshotReadinessScreen({
             ))}
           </div>
         </fieldset>
+      </section>
 
+      <section className="prep-section prep-questions">
         <fieldset>
-          <legend>Are you wearing your usual vision correction?</legend>
-          <div className="choice-grid">
+          <legend>Vision Correction</legend>
+          <p>Are you wearing your usual vision correction?</p>
+          <div className="choice-grid generous">
             {correctionOptions.map((option) => (
               <button
                 className={visionCorrection === option.value ? 'selected' : ''}
@@ -821,13 +842,15 @@ function SnapshotReadinessScreen({
       </section>
 
       <section className="prep-confidence glass-card">
-        <div>
-          <p className="eyebrow">Measurement Confidence</p>
-          <h2>Tracked with every snapshot</h2>
-        </div>
+        <p className="eyebrow">Measurement Confidence</p>
+        <h2>Tracked with every snapshot</h2>
         <strong>98%</strong>
-        <p>Brightness, device model, screen size, orientation, time of day, battery saver, eye fatigue, and correction usage are stored for trend analysis.</p>
+        <p>Brightness, device model, screen size, orientation, time of day, battery saver mode, eye fatigue, and vision correction are recorded to improve trend reliability.</p>
       </section>
+
+      <button className="glass-button primary begin-snapshot" onClick={() => onBegin({ eyeFatigue, visionCorrection, armLengthConfirmed })}>
+        Begin Snapshot <span>→</span>
+      </button>
     </div>
   )
 }
@@ -918,7 +941,7 @@ function HomeScreen({
           <div>
             <p className="section-kicker">Build Your Baseline</p>
             <h2>{Math.min(completedChecks, CALIBRATION_REQUIRED_SNAPSHOTS)} of 3 snapshots complete</h2>
-            <p>Your first few snapshots help Sightly learn your normal visual range so future changes can be measured more accurately.</p>
+            <p>Sightly needs 3 snapshots to learn your normal range. Your score is compared to your own baseline, not other people.</p>
           </div>
           <div className="next-snapshot-card glass-card">
             <span>Next Snapshot Available In:</span>
@@ -1604,16 +1627,16 @@ function PeripheralAwarenessTest({
     })
   }
 
-  function recordTap(selectedDirection: PeripheralDirection | 'miss') {
+  function recordTap(selectedDirection: PeripheralDirection, eventTimeStamp: number) {
     if (!canAnswer) return
     setCanAnswer(false)
     setStimulusVisible(false)
-    const responseTimeMs = selectedDirection === 'miss' ? 1800 : Math.round(performance.now() - roundStartedAt)
-    const correct = selectedDirection !== 'miss'
+    const responseTimeMs = Math.round(eventTimeStamp - roundStartedAt)
+    const correct = selectedDirection === direction
     const trial: PeripheralTrial = {
       round: trials.length + 1,
       direction,
-      selectedDirection: correct ? direction : 'miss',
+      selectedDirection,
       appearanceTimeMs: profile.duration,
       stimulusSizePx: profile.size,
       eccentricity: profile.eccentricity,
@@ -1632,29 +1655,24 @@ function PeripheralAwarenessTest({
     }
 
     setTrials(nextTrials)
-    setFeedback(selectedDirection === 'miss' ? 'Missed. The next cue will be slightly easier.' : correct ? 'Detected. Increasing difficulty.' : 'Close. Adjusting to find your boundary.')
+    setFeedback(correct ? 'Finding your threshold.' : 'Adjusting the next round.')
     setDifficultyIndex((current) => correct ? Math.min(current + 1, peripheralDifficulty.length - 1) : Math.max(current - 1, 0))
     setDirection(randomPeripheralDirection(direction))
-  }
-
-  function markSeen() {
-    if (!canAnswer) return
-    recordTap(direction)
   }
 
   if (!started) {
     return (
       <div className="screen test-screen peripheral-screen">
         <button className="text-button" onClick={onCancel}>Cancel</button>
-        <p className="small-muted">{step + 1} of {total} · Peripheral awareness threshold</p>
+        <p className="small-muted">{testProgressLabel(step, total)} · Peripheral awareness threshold</p>
         <h1>Peripheral Awareness</h1>
         <section className="sharpness-instructions peripheral-instructions glass-card">
           <p className="eyebrow">Before you start</p>
           <ul>
             <li>Keep your eyes focused on the center dot throughout the test.</li>
             <li>Only one soft cue appears at a time around the edge.</li>
-            <li>Press whether you saw the cue; you do not need to identify its location.</li>
-            <li>Difficulty changes by duration, size, contrast, and distance from center.</li>
+            <li>Tap the location where it appeared.</li>
+            <li>Difficulty changes quietly as Sightly finds your threshold.</li>
           </ul>
         </section>
         <button className="glass-button primary sharpness-start" onClick={() => setStarted(true)}>Start peripheral threshold</button>
@@ -1665,7 +1683,7 @@ function PeripheralAwarenessTest({
   return (
     <div className="screen test-screen peripheral-screen">
       <button className="text-button" onClick={onCancel}>Cancel</button>
-      <p className="small-muted">{step + 1} of {total} · Threshold confidence</p>
+      <p className="small-muted">{testProgressLabel(step, total)} · Finding your threshold</p>
       <div className="difficulty-track peripheral-track" aria-label={`Peripheral confidence ${confidencePreview}%`}>
         <span style={{ width: `${progress}%` }} />
       </div>
@@ -1685,11 +1703,12 @@ function PeripheralAwarenessTest({
           />
         )}
       </section>
-      <h2>Did you see the target?</h2>
-      <p>Keep your eyes on the center dot. One target appears per round; simply confirm whether you saw it.</p>
-      <div className="peripheral-answer-row">
-        <button className="glass-button primary" disabled={!canAnswer} onClick={markSeen}>I saw it</button>
-        <button className="glass-button" disabled={!canAnswer} onClick={() => recordTap('miss')}>I did not see it</button>
+      <h2>Where did the dot appear?</h2>
+      <p>Keep your eyes on the center dot. One dot appears per round.</p>
+      <div className="peripheral-location-grid" aria-label="Choose where the dot appeared">
+        {peripheralAnswerOptions.map((option) => (
+          <button className="glass-button" disabled={!canAnswer} key={option.value} onClick={(event) => recordTap(option.value, event.timeStamp)}>{option.label}</button>
+        ))}
       </div>
       {feedback && <p className="sharpness-feedback peripheral-feedback">{feedback}</p>}
       <div className="sharpness-stats">
@@ -2157,6 +2176,7 @@ function SharpnessThresholdTest({
 
   const fontSize = sharpnessFontSizes[rowIndex]
   const progress = Math.round(((rowIndex + 1) / SHARPNESS_MAX_ROWS) * 100)
+  const answerSlots = Array.from({ length: 6 }, (_, index) => answer[index] ?? '')
 
   function submitRow() {
     const typedAnswer = normalizeAnswer(answer)
@@ -2183,7 +2203,7 @@ function SharpnessThresholdTest({
       setRowIndex((current) => passed ? Math.min(current + 1, SHARPNESS_MAX_ROWS - 1) : Math.max(current - 1, 0))
       setLetters(randomSharpnessRow())
       setAnswer('')
-      setFeedback(passed ? 'Correct. The next row is smaller.' : 'Miss recorded. Making the next row larger to bracket your threshold.')
+      setFeedback(passed ? 'Almost there.' : 'Finding your threshold.')
       setRoundStartedAt(performance.now())
       return
     }
@@ -2228,15 +2248,15 @@ function SharpnessThresholdTest({
     return (
       <div className="screen test-screen sharpness-screen">
         <button className="text-button" onClick={onCancel}>Cancel</button>
-        <p className="small-muted">{step + 1} of {total} · Smallest readable row</p>
+        <p className="small-muted">{testProgressLabel(step, total)} · Smallest readable row</p>
         <h1>Visual Sharpness</h1>
         <section className="sharpness-instructions glass-card">
           <p className="eyebrow">Before you start</p>
           <ul>
-            <li>Hold your phone at a comfortable, consistent distance.</li>
-            <li>Cover one eye if testing each eye separately.</li>
-            <li>Type the letters you can read.</li>
-            <li>We’ll gradually make them smaller.</li>
+            <li>Hold your phone at a comfortable arm’s length.</li>
+            <li>Try to use the same distance every time.</li>
+            <li>Enter the 6 letters shown.</li>
+            <li>Typing is the default. Voice entry coming soon.</li>
           </ul>
         </section>
         <div className="eye-mode-picker" aria-label="Choose eye mode">
@@ -2257,7 +2277,7 @@ function SharpnessThresholdTest({
   return (
     <div className="screen test-screen sharpness-screen">
       <button className="text-button" onClick={onCancel}>Cancel</button>
-      <p className="small-muted">{step + 1} of {total} · Difficulty increasing</p>
+      <p className="small-muted">{testProgressLabel(step, total)} · Finding your threshold</p>
       <div className="difficulty-track" aria-label={`Difficulty ${progress}%`}>
         <span style={{ width: `${progress}%` }} />
       </div>
@@ -2266,7 +2286,10 @@ function SharpnessThresholdTest({
         <div className="letter-row" style={{ fontSize }}>{letters.split('').join(' ')}</div>
       </section>
       <label className="sharpness-answer">
-        <span>Type the letters you see</span>
+        <span>Enter the 6 letters shown.</span>
+        <div className="sharpness-slots" aria-hidden="true">
+          {answerSlots.map((letter, index) => <span key={index}>{letter}</span>)}
+        </div>
         <input
           autoCapitalize="characters"
           autoComplete="off"
@@ -2277,12 +2300,14 @@ function SharpnessThresholdTest({
           maxLength={6}
           spellCheck={false}
           value={answer}
-          onChange={(event) => setAnswer(normalizeAnswer(event.target.value))}
+          onChange={(event) => setAnswer(normalizeAnswer(event.target.value).slice(0, 6))}
           onKeyDown={(event) => {
             if (event.key === 'Enter' && answer.length > 0) submitRow()
           }}
-          placeholder="KDMRTA"
+          placeholder="Type the letters you see above"
+          aria-describedby="sharpness-helper"
         />
+        <small id="sharpness-helper">Spaces and lowercase are okay. Voice entry coming soon.</small>
       </label>
       {feedback && <p className="sharpness-feedback">{feedback}</p>}
       <div className="sharpness-stats">
