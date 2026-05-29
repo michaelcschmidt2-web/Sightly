@@ -1,19 +1,29 @@
-const CACHE_NAME = 'sightly-beta-v1'
-const SHELL_ASSETS = ['/', '/manifest.webmanifest', '/icons.svg']
+// Sightly beta intentionally disables service-worker caching.
+// This file stays at /sw.js so existing installed workers can update, clear
+// stale caches, release controlled pages, and unregister themselves.
 
 self.addEventListener('install', (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(SHELL_ASSETS)))
+  self.skipWaiting()
+  event.waitUntil(Promise.resolve())
 })
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))),
-  )
+  event.waitUntil((async () => {
+    if (self.caches) {
+      const keys = await caches.keys()
+      await Promise.all(keys.map((key) => caches.delete(key)))
+    }
+
+    if (self.registration) {
+      await self.registration.unregister()
+    }
+
+    const clientsList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true })
+    clientsList.forEach((client) => client.navigate(client.url))
+  })())
 })
 
-self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET') return
-  event.respondWith(
-    caches.match(event.request).then((cached) => cached ?? fetch(event.request).catch(() => caches.match('/'))),
-  )
+self.addEventListener('fetch', () => {
+  // Do not intercept requests during beta. Network/Vercel should serve the
+  // latest index.html and hashed Vite assets directly.
 })
