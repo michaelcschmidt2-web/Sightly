@@ -159,6 +159,13 @@ p { margin: 0; color: var(--muted); line-height: 1.45; }
   min-height: 52px;
   font-weight: 760;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: keep-all;
   transition: transform .45s cubic-bezier(.2,1,.2,1), box-shadow .45s cubic-bezier(.2,1,.2,1);
 }
 .glass-button:hover, .tool-card:hover, .bottom-nav button:hover { transform: translateY(-2px) scale(1.01); }
@@ -1033,13 +1040,13 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
 }
 
 .reference-check {
-  width: min(322px, 86%);
+  width: min(342px, 100%);
   min-height: 78px;
   margin: 13px auto 24px;
   padding: 12px 18px;
-  display: grid;
-  grid-template-columns: 48px 1fr auto;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 14px;
   color: var(--navy);
   background: linear-gradient(145deg, rgba(255,255,255,.82), rgba(250,252,255,.46));
@@ -1653,8 +1660,16 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
   border-radius: 22px;
   font-size: 16px;
   font-weight: 780;
+  position: relative;
+  padding-inline: 46px;
 }
-.begin-snapshot span { margin-left: 4px; }
+.begin-snapshot .button-label { margin: 0; }
+.begin-snapshot .button-arrow {
+  position: absolute;
+  right: 22px;
+  margin: 0;
+  pointer-events: none;
+}
 
 @media (max-height: 780px) {
   .snapshot-prep-screen { padding: 14px 18px max(18px, env(safe-area-inset-bottom)); }
@@ -2142,6 +2157,22 @@ textarea {
 
 button {
   line-height: 1.15;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: keep-all;
+  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+button *,
+button span,
+button strong,
+button small {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: keep-all;
 }
 
 h1,
@@ -2152,10 +2183,18 @@ strong,
 small,
 dd,
 dt,
-button,
 label,
 li {
   overflow-wrap: anywhere;
+}
+
+button,
+button *,
+button span,
+button strong,
+button small {
+  overflow-wrap: normal;
+  word-break: keep-all;
 }
 
 .screen {
@@ -2203,6 +2242,12 @@ li {
   min-height: 54px;
   padding: 15px 20px;
   text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: keep-all;
 }
 
 .text-button {
@@ -2282,8 +2327,10 @@ li {
 .peripheral-location-grid .glass-button,
 .symbol-choice {
   min-height: 52px;
-  display: grid;
+  display: flex;
   align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .setup-note,
@@ -2540,6 +2587,31 @@ dl {
   .choice-grid button {
     font-size: 12.5px;
     padding-inline: 10px;
+  }
+
+  .check-button,
+  .setup-next,
+  .begin-snapshot,
+  .sharpness-start,
+  .intro-next,
+  .onboarding-actions .glass-button {
+    width: 100%;
+    min-width: 0;
+    padding-inline: 16px;
+    font-size: clamp(14px, 4vw, 16px);
+  }
+
+  .begin-snapshot {
+    padding-inline: 42px;
+  }
+
+  .begin-snapshot .button-arrow {
+    right: 18px;
+  }
+
+  .reference-check strong,
+  .quiet-check strong {
+    font-size: clamp(16px, 4.8vw, 18px);
   }
 
   .memory-card-strip {

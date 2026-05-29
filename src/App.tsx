@@ -882,7 +882,8 @@ function SnapshotReadinessScreen({
       </section>
 
       <button className="glass-button primary begin-snapshot" onClick={() => onBegin({ eyeFatigue, visionCorrection, armLengthConfirmed })}>
-        Begin Snapshot <span>→</span>
+        <span className="button-label">Begin Snapshot</span>
+        <span className="button-arrow" aria-hidden="true">→</span>
       </button>
     </div>
   )
