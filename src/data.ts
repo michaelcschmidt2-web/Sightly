@@ -165,7 +165,7 @@ const emptyBetaSuccessMetrics: BetaSuccessMetrics = {
 export const emptyState: SightlyState = {
   onboarded: false,
   profile: {
-    name: 'Mike',
+    name: '',
     notificationsEnabled: true,
     reduceMotion: false,
     highContrast: false,
@@ -350,6 +350,10 @@ export function createDemoState(): SightlyState {
   return rebuildDerivedState({
     ...emptyState,
     onboarded: true,
+    profile: {
+      ...emptyState.profile,
+      name: 'Demo User',
+    },
     checks: checksWithoutDerived,
     lastNotification: "It’s time for your monthly vision check-in.",
   })

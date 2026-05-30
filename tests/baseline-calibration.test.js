@@ -11,11 +11,16 @@ test('baseline calibration requires three snapshots spaced at least twelve hours
   assert.match(app, /CALIBRATION_MIN_INTERVAL_MS\s*=\s*12 \* 60 \* 60 \* 1000/)
   assert.match(app, /nextCalibrationSnapshotAt/)
   assert.match(app, /baselineCtaDisabled/)
-  assert.match(app, /Next Snapshot Available In:/)
+  assert.match(app, /Complete Snapshot 2 when available/)
 })
 
-test('pre-baseline home hides score, typical range, history, and trend interpretation', () => {
-  assert.match(app, /baselineReady \? 'Current Vision' : 'Learning Your Vision'/)
+test('pre-baseline home explains Sightly and baseline before showing progress', () => {
+  assert.match(app, /Welcome to Sightly/)
+  assert.match(app, /Sightly helps you track changes in your visual performance over time\./)
+  assert.match(app, /Start by completing 3 baseline snapshots across separate sessions\./)
+  assert.match(app, /This helps Sightly learn your normal range so future changes can be compared to you — not everyone else\./)
+  assert.match(app, /What is a baseline\?/)
+  assert.match(app, /A baseline is your personal normal range\./)
   assert.match(app, /baselineReady && completedChecks > CALIBRATION_REQUIRED_SNAPSHOTS && latestCheck\?\.explanation/)
   assert.match(app, /baselineReady && \(\s*<section className="supporting-details-section"/)
   assert.match(app, /baselineReady \? `Typical Range · \$\{typicalRangeLabel\}` : 'Baseline Progress'/)

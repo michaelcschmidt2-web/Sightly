@@ -123,6 +123,7 @@ function App() {
   const [testStartedAt, setTestStartedAt] = useState(() => Date.now())
   const [snapshotResumed, setSnapshotResumed] = useState(false)
   const [snapshotInterruptions, setSnapshotInterruptions] = useState(0)
+  const introCompleted = loadOnboardingDraft()?.introComplete === true
 
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 60_000)
@@ -154,19 +155,20 @@ function App() {
   const typicalRangeLabel = state.typicalRange
     ? `${state.typicalRange.low}–${state.typicalRange.high}`
     : 'After 3 snapshots'
-  const greeting = 'Good Evening, Mike'
+  const profileName = state.profile.name.trim()
 
   const homeStatus = useMemo(() => {
-    if (completedChecks === 0) return { title: 'Learning Your Vision', detail: 'Build your baseline with 3 full snapshots spaced at least 12 hours apart.' }
-    if (completedChecks === 1) return { title: 'Learning Your Vision', detail: '1 of 3 snapshots complete. Snapshot 2 will continue your baseline without interpreting trends yet.' }
-    if (completedChecks === 2) return { title: 'Learning Your Vision', detail: '2 of 3 snapshots complete. Your final baseline snapshot unlocks score, range, history, and trend monitoring.' }
+    if (!baselineReady) return {
+      title: 'Welcome to Sightly',
+      detail: 'Sightly helps you track changes in your visual performance over time.',
+    }
     return {
       title: state.baselineCalibration.message,
       detail: state.baselineCalibration.optionalFourthSnapshotRecommended
         ? 'Your first 3 snapshots varied more than expected. An optional 4th calibration snapshot can improve consistency.'
         : 'Your baseline is ready. Sightly can now compare future snapshots against your normal range.',
     }
-  }, [completedChecks, state.baselineCalibration.message, state.baselineCalibration.optionalFourthSnapshotRecommended])
+  }, [baselineReady, state.baselineCalibration.message, state.baselineCalibration.optionalFourthSnapshotRecommended])
 
   useEffect(() => {
     if (!state.profile.notificationsEnabled || !calibrationInProgress || calibrationWaitMs > 0 || completedChecks === 0) return undefined
@@ -191,7 +193,7 @@ function App() {
       onboarded: true,
       profile: {
         ...emptyState.profile,
-        name: profile.name || 'Friend',
+        name: profile.name.trim(),
         authMode: profile.authMode,
         ageRange: profile.ageRange,
         correctionProfile: profile.correctionProfile,
@@ -381,7 +383,7 @@ function App() {
     setTab('home')
   }
 
-  if (!state.onboarded) {
+  if (!introCompleted || !state.onboarded) {
     return <FirstRunOnboarding onComplete={completeOnboarding} />
   }
 
@@ -412,7 +414,7 @@ function App() {
                 baselineReady={baselineReady}
                 calibration={state.baselineCalibration}
                 completedChecks={completedChecks}
-                greeting={greeting}
+                profileName={profileName}
                 homeStatus={homeStatus}
                 latestCheck={latestCheck}
                 onFeedback={recordBetaFeedback}
@@ -899,7 +901,7 @@ function HomeScreen({
   baselineReady,
   calibration,
   completedChecks,
-  greeting,
+  profileName,
   homeStatus,
   latestCheck,
   onFeedback,
@@ -913,7 +915,7 @@ function HomeScreen({
   baselineReady: boolean
   calibration: SightlyState['baselineCalibration']
   completedChecks: number
-  greeting: string
+  profileName: string
   homeStatus: { title: string; detail: string }
   latestCheck: SightlyState['checks'][number] | undefined
   onFeedback: (snapshotId: string, believabilityRating: 1 | 2 | 3 | 4 | 5, comment: string, tags: BetaFeedbackTag[]) => void
@@ -939,6 +941,7 @@ function HomeScreen({
         ? 'Above Typical Range'
         : 'Within Typical Range'
   const storyTitle = scoreClass === 'below' ? 'Vision Insight' : 'Vision Story'
+  const [showBaselineInfo, setShowBaselineInfo] = useState(false)
   const primaryChange = latestCheck?.explanation?.contributions.find((item) => item.points !== 0)
 
   return (
@@ -951,8 +954,8 @@ function HomeScreen({
 
       <header className="home-hero-header">
         <div>
-          <p>Good Evening,</p>
-          <h1>{greeting.replace('Good Evening, ', '')}</h1>
+          {profileName ? <p>Good evening,</p> : <p className="neutral-home-kicker">Welcome to Sightly</p>}
+          <h1>{profileName || 'Welcome to Sightly'}</h1>
         </div>
         <button className="profile-bubble" aria-label="Profile">
           <span />
@@ -960,16 +963,18 @@ function HomeScreen({
       </header>
 
       <section className={`current-vision-panel ${scoreClass}`} aria-label="Current Vision">
-        <p className="current-vision-kicker">{baselineReady ? 'Current Vision' : 'Learning Your Vision'}</p>
+        <p className="current-vision-kicker">{baselineReady ? 'Current Vision' : 'Welcome to Sightly'}</p>
         <strong>{latestScore ?? (baselineReady ? '—' : `${Math.min(completedChecks, 3)} of 3`)}</strong>
-        <h2>{currentVisionStatus}</h2>
+        <h2>{baselineReady ? currentVisionStatus : 'Baseline Progress'}</h2>
         <p className="current-vision-range">{baselineReady ? `Typical Range · ${typicalRangeLabel}` : 'Baseline Progress'}</p>
       </section>
 
       <section className="vision-story-section" aria-label="Vision Story">
-        <p className="section-kicker">{storyTitle}</p>
+        <p className="section-kicker">{baselineReady ? storyTitle : 'What Sightly Does'}</p>
         <h2>{homeStatus.title}</h2>
         <p>{homeStatus.detail}</p>
+        {!baselineReady && <p>Start by completing 3 baseline snapshots across separate sessions. This helps Sightly learn your normal range so future changes can be compared to you — not everyone else.</p>}
+        {!baselineReady && <button className="text-button baseline-info-link" onClick={() => setShowBaselineInfo(true)}>What is a baseline?</button>}
         {scoreClass === 'below' && <p className="quiet-recommendation">Retest in 7 days to confirm.</p>}
       </section>
 
@@ -978,13 +983,13 @@ function HomeScreen({
       {!baselineReady && (
         <section className="baseline-progress-section" aria-label="Baseline calibration progress">
           <div>
-            <p className="section-kicker">Build Your Baseline</p>
+            <p className="section-kicker">Baseline Progress</p>
             <h2>{Math.min(completedChecks, CALIBRATION_REQUIRED_SNAPSHOTS)} of 3 snapshots complete</h2>
-            <p>Three snapshots help Sightly learn your typical range.</p>
+            <p>Next: {completedChecks === 0 ? 'Complete Snapshot 1 when ready' : completedChecks === 1 ? 'Complete Snapshot 2 when available' : 'Complete Snapshot 3 when available'}</p>
           </div>
           <div className="next-snapshot-card glass-card">
-            <span>Next Snapshot Available In:</span>
-            <strong>{nextSnapshotLabel}</strong>
+            <span>Next:</span>
+            <strong>{baselineCtaDisabled ? nextSnapshotLabel : completedChecks === 0 ? 'Complete Snapshot 1' : completedChecks === 1 ? 'Complete Snapshot 2' : 'Complete Snapshot 3'}</strong>
           </div>
         </section>
       )}
@@ -1027,7 +1032,7 @@ function HomeScreen({
       )}
 
       <button className="glass-button check-button reference-check quiet-check" disabled={baselineCtaDisabled} onClick={startCheck}>
-        <strong>{baselineReady ? (calibration.optionalFourthSnapshotRecommended ? 'Add Calibration Snapshot' : 'Check In') : completedChecks === 0 ? 'Start First Snapshot' : 'Continue Baseline'}</strong>
+        <strong>{baselineReady ? (calibration.optionalFourthSnapshotRecommended ? 'Add Calibration Snapshot' : 'Check In') : 'Continue Baseline'}</strong>
       </button>
 
       {!baselineReady && latestCheck && (
@@ -1069,6 +1074,16 @@ function HomeScreen({
           <div className="vision-event-row"><span>⚠️</span><p>Eye Injury</p></div>
         </div>
         </section>
+      )}
+
+      {showBaselineInfo && (
+        <div className="modal-scrim" role="dialog" aria-modal="true" aria-label="What is a baseline?">
+          <section className="glass-card baseline-info-modal">
+            <h2>What is a baseline?</h2>
+            <p>A baseline is your personal normal range. Sightly uses it to compare future snapshots against your own history.</p>
+            <button className="glass-button primary" onClick={() => setShowBaselineInfo(false)}>Got it</button>
+          </section>
+        </div>
       )}
     </div>
   )

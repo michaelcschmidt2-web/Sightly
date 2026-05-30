@@ -15,6 +15,20 @@ test('full first-user flow persists intro completion and setup draft before onbo
   assert.match(app, /saveOnboardingDraft\(null\)/)
 })
 
+test('fresh and seeded states cannot skip the intro carousel before intro completion', () => {
+  assert.match(app, /const introCompleted = loadOnboardingDraft\(\)\?\.introComplete === true/)
+  assert.match(app, /if \(!introCompleted \|\| !state\.onboarded\) \{\s*return <FirstRunOnboarding onComplete=\{completeOnboarding\} \/>/)
+  assert.doesNotMatch(app, /if \(!state\.onboarded\) \{\s*return <FirstRunOnboarding/)
+})
+
+test('production first load has neutral user state and no Mike greeting unless profile name exists', () => {
+  assert.match(data, /name: ''/)
+  assert.doesNotMatch(data, /emptyState[\s\S]*name: 'Mike'/)
+  assert.doesNotMatch(app, /Good Evening, Mike/)
+  assert.match(app, /profileName \? <p>Good evening,<\/p> : <p className="neutral-home-kicker">Welcome to Sightly<\/p>/)
+  assert.match(app, /<h1>\{profileName \|\| 'Welcome to Sightly'\}<\/h1>/)
+})
+
 test('refresh recovery does not erase an interrupted setup or snapshot session before the user chooses', () => {
   assert.match(app, /if \(savedSession && !activeTool && !showSnapshotPrep\) return/)
   assert.match(app, /setSavedSession\(null\)/)
@@ -25,7 +39,7 @@ test('baseline snapshots enforce the 12-hour calibration lockout in UI and begin
   assert.match(app, /CALIBRATION_MIN_INTERVAL_MS = 12 \* 60 \* 60 \* 1000/)
   assert.match(app, /baselineCtaDisabled/)
   assert.match(app, /if \(baselineCtaDisabled\) return/)
-  assert.match(app, /Next Snapshot Available In:/)
+  assert.match(app, /Complete Snapshot 2 when available/)
 })
 
 test('standalone explore tests are isolated from baseline, snapshots, and vision score', () => {
@@ -41,7 +55,7 @@ test('baseline unlocks only after three complete snapshot checks and pre-baselin
   assert.match(data, /checks\.slice\(0, 3\)/)
   assert.match(app, /baselineReady = state\.baselineCalibration\.completedSnapshots >= CALIBRATION_REQUIRED_SNAPSHOTS && Boolean\(state\.typicalRange\)/)
   assert.match(app, /latestScore = baselineReady \? latestCheck\?\.score \?\? null : null/)
-  assert.match(app, /baselineReady \? 'Current Vision' : 'Learning Your Vision'/)
+  assert.match(app, /baselineReady \? 'Current Vision' : 'Welcome to Sightly'/)
 })
 
 test('typical range and snapshot interpretation avoid look-ahead bias', () => {

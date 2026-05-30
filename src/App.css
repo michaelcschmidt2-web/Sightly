@@ -1072,6 +1072,37 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
   font-weight: 520;
   letter-spacing: -.72px;
 }
+.baseline-info-link {
+  align-self: flex-start;
+  margin-top: 2px;
+  padding-left: 0;
+  color: rgba(30, 78, 126, .72);
+}
+.modal-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, .18);
+  backdrop-filter: blur(12px);
+}
+.baseline-info-modal {
+  width: min(340px, 100%);
+  border-radius: 28px;
+  padding: 20px;
+  display: grid;
+  gap: 12px;
+  text-align: left;
+}
+.baseline-info-modal p {
+  color: rgba(23,32,44,.66);
+}
+.baseline-info-modal .glass-button {
+  width: 100%;
+  margin-top: 4px;
+}
 .check-icon {
   width: 43px;
   height: 43px;
