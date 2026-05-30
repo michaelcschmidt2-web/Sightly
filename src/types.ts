@@ -74,7 +74,7 @@ export type ContrastTrial = {
   round: number
   contrast: number
   direction: ContrastDirection
-  selectedDirection: ContrastDirection
+  selectedDirection: ContrastDirection | 'miss'
   correct: boolean
   responseTimeMs: number
 }

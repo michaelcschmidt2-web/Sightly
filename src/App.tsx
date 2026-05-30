@@ -767,7 +767,7 @@ function FirstRunOnboarding({ onComplete }: { onComplete: (profile: OnboardingPr
 const readinessChecklist = [
   'Set brightness high',
   'Choose steady lighting',
-  'Hold phone at arm’s length',
+  'Keep a comfortable viewing distance',
   'Wear your usual glasses or contacts',
   'Skip if your eyes feel unusually tired',
 ]
@@ -832,7 +832,7 @@ function SnapshotReadinessScreen({
         </div>
         <label className="distance-confirm">
           <input checked={armLengthConfirmed} onChange={(event) => setArmLengthConfirmed(event.target.checked)} type="checkbox" />
-          <span>I’m holding my phone at arm’s length</span>
+          <span>I can keep the phone at a consistent distance</span>
         </label>
       </section>
 
@@ -879,6 +879,11 @@ function SnapshotReadinessScreen({
         <h2>Captured quietly</h2>
         <strong>98%</strong>
         <p>Device, light, and setup context help make trends easier to trust.</p>
+      </section>
+
+      <section className="arm-length-reminder glass-card" aria-label="Final distance reminder">
+        <strong>Hold your phone at arm’s length.</strong>
+        <span>Use the same distance each time.</span>
       </section>
 
       <button className="glass-button primary begin-snapshot" onClick={() => onBegin({ eyeFatigue, visionCorrection, armLengthConfirmed })}>
@@ -1583,6 +1588,7 @@ function PeripheralAwarenessTest({
   const [direction, setDirection] = useState<PeripheralDirection>(() => randomPeripheralDirection())
   const [stimulusVisible, setStimulusVisible] = useState(false)
   const [canAnswer, setCanAnswer] = useState(false)
+  const answerOpenRef = useRef(false)
   const [roundStartedAt, setRoundStartedAt] = useState(() => performance.now())
   const [trials, setTrials] = useState<PeripheralTrial[]>([])
   const [feedback, setFeedback] = useState('')
@@ -1597,13 +1603,16 @@ function PeripheralAwarenessTest({
 
   useEffect(() => {
     if (!started) return undefined
+    answerOpenRef.current = false
     const revealTimer = window.setTimeout(() => {
       setRoundStartedAt(performance.now())
       setStimulusVisible(true)
       setCanAnswer(true)
-    }, 480)
-    const hideTimer = window.setTimeout(() => setStimulusVisible(false), 480 + profile.duration)
+      answerOpenRef.current = true
+    }, 360)
+    const hideTimer = window.setTimeout(() => setStimulusVisible(false), 360 + profile.duration)
     return () => {
+      answerOpenRef.current = false
       window.clearTimeout(revealTimer)
       window.clearTimeout(hideTimer)
     }
@@ -1662,7 +1671,8 @@ function PeripheralAwarenessTest({
   }
 
   function recordTap(selectedDirection: PeripheralDirection, eventTimeStamp: number) {
-    if (!canAnswer) return
+    if (!answerOpenRef.current) return
+    answerOpenRef.current = false
     setCanAnswer(false)
     setStimulusVisible(false)
     const responseTimeMs = Math.round(eventTimeStamp - roundStartedAt)
@@ -1739,9 +1749,9 @@ function PeripheralAwarenessTest({
       </section>
       <h2>Where did the dot appear?</h2>
       <p>Keep your eyes centered. One dot appears each round.</p>
-      <div className="peripheral-location-grid" aria-label="Choose where the dot appeared">
+      <div className="peripheral-location-grid spatial-pad" aria-label="Choose where the dot appeared">
         {peripheralAnswerOptions.map((option) => (
-          <button className="glass-button" disabled={!canAnswer} key={option.value} onClick={(event) => recordTap(option.value, event.timeStamp)}>{option.label}</button>
+          <button className={`glass-button peripheral-choice peripheral-${option.value}`} disabled={!canAnswer} key={option.value} onClick={(event) => recordTap(option.value, event.timeStamp)}>{option.label}</button>
         ))}
       </div>
       {feedback && <p className="sharpness-feedback peripheral-feedback">{feedback}</p>}
@@ -2099,8 +2109,8 @@ function ContrastThresholdTest({
     })
   }
 
-  function answer(selectedDirection: ContrastDirection) {
-    const correct = selectedDirection === direction
+  function answer(selectedDirection: ContrastDirection | 'miss') {
+    const correct = selectedDirection !== 'miss' && selectedDirection === direction
     const trial: ContrastTrial = {
       round: trials.length + 1,
       contrast,
@@ -2160,7 +2170,7 @@ function ContrastThresholdTest({
         <div className={`landolt-ring gap-${direction}`} style={{ '--ring-contrast': contrast / 100 } as CSSProperties & Record<'--ring-contrast', number>} aria-label="Landolt C ring" />
       </section>
       <h2>Where is the opening?</h2>
-      <p>Choose where the ring opens, even when it feels faint.</p>
+      <p>Choose where the ring opens. If you cannot see it, use Not visible.</p>
       {feedback && <p className="sharpness-feedback contrast-feedback">{feedback}</p>}
       <div className="direction-pad" aria-label="Opening direction answers">
         <button className="glass-button direction top" onClick={() => answer('top')}>Top</button>
@@ -2168,6 +2178,7 @@ function ContrastThresholdTest({
         <button className="glass-button direction right" onClick={() => answer('right')}>Right</button>
         <button className="glass-button direction bottom" onClick={() => answer('bottom')}>Bottom</button>
       </div>
+      <button className="glass-button quiet not-visible-button" onClick={() => answer('miss')}>Not visible</button>
       <div className="sharpness-stats">
         <span>Accuracy: {trials.length ? Math.round((correctTrials.length / trials.length) * 100) : '—'}%</span>
         <span>Confidence: {confidencePreview}%</span>
@@ -2210,8 +2221,6 @@ function SharpnessThresholdTest({
 
   const fontSize = sharpnessFontSizes[rowIndex]
   const progress = Math.round(((rowIndex + 1) / SHARPNESS_MAX_ROWS) * 100)
-  const answerSlots = Array.from({ length: 6 }, (_, index) => answer[index] ?? '')
-
   function submitRow() {
     const typedAnswer = normalizeAnswer(answer)
     const correctCount = letters.split('').reduce((count, letter, index) => count + (typedAnswer[index] === letter ? 1 : 0), 0)
@@ -2289,8 +2298,8 @@ function SharpnessThresholdTest({
           <ul>
             <li>Hold your phone at arm’s length.</li>
             <li>Use a similar distance each time.</li>
-            <li>Enter the 6 letters shown.</li>
-            <li>Type what you see.</li>
+            <li>Enter the 6 letters above.</li>
+            <li>You can use your phone’s dictation if typing is difficult.</li>
           </ul>
         </section>
         <div className="eye-mode-picker" aria-label="Choose eye mode">
@@ -2320,10 +2329,7 @@ function SharpnessThresholdTest({
         <div className="letter-row" style={{ fontSize }}>{letters.split('').join(' ')}</div>
       </section>
       <label className="sharpness-answer">
-        <span>Enter the letters shown.</span>
-        <div className="sharpness-slots" aria-hidden="true">
-          {answerSlots.map((letter, index) => <span key={index}>{letter}</span>)}
-        </div>
+        <span>Enter the 6 letters above.</span>
         <input
           autoCapitalize="characters"
           autoComplete="off"
@@ -2338,10 +2344,10 @@ function SharpnessThresholdTest({
           onKeyDown={(event) => {
             if (event.key === 'Enter' && answer.length > 0) submitRow()
           }}
-          placeholder="Letters you see"
+          placeholder="Type what you see"
           aria-describedby="sharpness-helper"
         />
-        <small id="sharpness-helper">Spaces and lowercase are okay.</small>
+        <small id="sharpness-helper">Spaces and lowercase are okay. You can use your phone’s dictation if typing is difficult.</small>
       </label>
       {feedback && <p className="sharpness-feedback">{feedback}</p>}
       <div className="sharpness-stats">

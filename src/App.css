@@ -61,9 +61,9 @@ button { font: inherit; min-height: 44px; touch-action: manipulation; -webkit-ta
 .screen::-webkit-scrollbar { display: none; }
 
 .glass-card, .glass-button, .glass-orb {
-  background: linear-gradient(145deg, rgba(255,255,255,0.76), rgba(255,255,255,0.42));
+  background: linear-gradient(145deg, rgba(255,255,255,0.82), rgba(246,250,255,0.48));
   border: 1px solid rgba(255,255,255,0.8);
-  box-shadow: var(--shadow);
+  box-shadow: var(--shadow), inset 0 -18px 42px rgba(163, 190, 224, 0.08);
   backdrop-filter: blur(22px) saturate(1.35);
 }
 
@@ -383,12 +383,10 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
 .sharpness-start { margin-top: auto; width: 100%; }
 .difficulty-track { width: 100%; height: 8px; border-radius: 999px; overflow: hidden; background: rgba(88,111,148,.12); margin: 8px 0 18px; }
 .difficulty-track span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, rgba(134,184,238,.55), rgba(91,125,173,.72)); transition: width .38s cubic-bezier(.2,1,.2,1); }
-.sharpness-row-stage { min-height: 260px; margin: 6px 0 18px; border-radius: 38px; display: grid; align-content: center; justify-items: center; gap: 30px; padding: 28px 16px; background: linear-gradient(180deg, rgba(255,255,255,.92), rgba(248,251,255,.72)); }
+.sharpness-row-stage { min-height: 260px; margin: 6px 0 18px; border-radius: 38px; display: grid; align-content: center; justify-items: center; gap: 30px; padding: 28px 16px; background: linear-gradient(180deg, rgba(255,255,255,.94), rgba(244,249,255,.76)); box-shadow: 0 28px 72px rgba(83,105,142,.18), inset 0 1px 1px rgba(255,255,255,.96); }
 .letter-row { color: #101827; font-weight: 760; letter-spacing: .42em; line-height: 1; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', Inter, system-ui, sans-serif; text-rendering: geometricPrecision; white-space: nowrap; transform: translateX(.18em); }
 .sharpness-answer { display: grid; gap: 9px; text-align: left; color: rgba(23,32,44,.55); font-size: 13px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
-.sharpness-slots { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 7px; }
-.sharpness-slots span { min-height: 42px; border-radius: 15px; display: grid; place-items: center; background: rgba(255,255,255,.66); border: 1px solid rgba(255,255,255,.82); color: var(--ink); font-size: 20px; box-shadow: inset 0 1px 0 #fff; }
-.sharpness-answer input { width: 100%; border: 1px solid rgba(255,255,255,.86); border-radius: 24px; padding: 18px 18px; min-height: 60px; background: rgba(255,255,255,.78); box-shadow: inset 0 1px 0 #fff, 0 14px 34px rgba(83,105,142,.12); color: var(--ink); font-size: max(18px, 26px); font-weight: 780; letter-spacing: .16em; text-align: center; outline: none; text-transform: uppercase; }
+.sharpness-answer input { width: 100%; border: 1px solid rgba(255,255,255,.86); border-radius: 24px; padding: 18px 18px; min-height: 60px; background: rgba(255,255,255,.78); box-shadow: inset 0 1px 0 #fff, 0 14px 34px rgba(83,105,142,.12); color: var(--ink); font-size: max(18px, 26px); font-weight: 760; letter-spacing: .08em; text-align: center; outline: none; text-transform: uppercase; }
 .sharpness-answer input::placeholder { color: rgba(23,32,44,.34); font-size: 15px; letter-spacing: 0; text-transform: none; }
 .sharpness-answer small { color: rgba(23,32,44,.5); font-size: 12px; font-weight: 700; letter-spacing: 0; line-height: 1.35; text-transform: none; }
 .sharpness-answer input:focus { border-color: rgba(105,151,214,.55); box-shadow: inset 0 1px 0 #fff, 0 0 0 4px rgba(147,197,253,.18), 0 14px 34px rgba(83,105,142,.12); }
@@ -436,6 +434,7 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
 .direction-pad .bottom { grid-area: bottom; }
 .direction-pad .left { grid-area: left; }
 .contrast-feedback { color: rgba(46, 83, 124, .74); }
+.not-visible-button { width: 100%; margin: 8px 0 0; min-height: 52px; border-radius: 22px; color: rgba(23,32,44,.66); }
 
 .peripheral-screen h1 { margin-bottom: 14px; }
 .peripheral-instructions { background: linear-gradient(145deg, rgba(255,255,255,.84), rgba(238,247,255,.54)); }
@@ -453,8 +452,22 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
 .symbol-choice { min-height: 58px; border-radius: 22px; padding: 10px; font-size: 28px; background: linear-gradient(145deg, rgba(255,255,255,.84), rgba(241,247,255,.6)); }
 .visual-response-feedback { color: rgba(46,83,124,.74); }
 .peripheral-feedback { color: rgba(46,83,124,.74); }
-.peripheral-location-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 14px 0 8px; }
-.peripheral-location-grid .glass-button { min-height: 54px; border-radius: 22px; padding-inline: 10px; }
+.peripheral-location-grid { display: grid; grid-template-areas: 'upper-left top upper-right' 'left center right' 'lower-left bottom lower-right'; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin: 14px 0 8px; align-items: center; }
+.peripheral-location-grid .glass-button { min-height: 54px; border-radius: 22px; padding-inline: 8px; }
+.peripheral-choice { font-size: 13px; line-height: 1.08; }
+.peripheral-top { grid-area: top; }
+.peripheral-bottom { grid-area: bottom; }
+.peripheral-left { grid-area: left; }
+.peripheral-right { grid-area: right; }
+.peripheral-upper-left { grid-area: upper-left; }
+.peripheral-upper-right { grid-area: upper-right; }
+.peripheral-lower-left { grid-area: lower-left; }
+.peripheral-lower-right { grid-area: lower-right; }
+.peripheral-location-grid::before { content: 'Center'; grid-area: center; min-height: 54px; border-radius: 22px; display: flex; align-items: center; justify-content: center; color: rgba(23,32,44,.42); font-weight: 760; background: rgba(255,255,255,.34); border: 1px dashed rgba(83,105,142,.2); }
+
+.arm-length-reminder { display: grid; gap: 4px; padding: 14px 16px; border-radius: 24px; text-align: center; background: linear-gradient(145deg, rgba(255,255,255,.86), rgba(238,247,255,.58)); }
+.arm-length-reminder strong { color: var(--ink); font-size: 15px; }
+.arm-length-reminder span { color: rgba(23,32,44,.56); font-size: 13px; font-weight: 680; }
 
 
 @media (max-height: 780px) {
