@@ -123,7 +123,7 @@ function App() {
   const [testStartedAt, setTestStartedAt] = useState(() => Date.now())
   const [snapshotResumed, setSnapshotResumed] = useState(false)
   const [snapshotInterruptions, setSnapshotInterruptions] = useState(0)
-  const introCompleted = loadOnboardingDraft()?.introComplete === true
+  const introCompleted = state.onboarded || loadOnboardingDraft()?.introComplete === true
 
   useEffect(() => {
     const interval = window.setInterval(() => setNow(Date.now()), 60_000)
@@ -180,6 +180,27 @@ function App() {
     return () => window.clearTimeout(reminderTimer)
   }, [calibrationInProgress, calibrationWaitMs, completedChecks, state.lastNotification, state.profile.notificationsEnabled])
 
+  function initializeSnapshot(readiness: SnapshotReadiness) {
+    setActiveRunMode('monthly-snapshot')
+    setSnapshotReadiness(readiness)
+    setShowSnapshotPrep(false)
+    setActiveTool(visionTools[0])
+    setTestStep(0)
+    setPendingMeasurements({})
+    setPendingResultDetails({})
+    setTestStartedAt(Date.now())
+    setSnapshotResumed(false)
+    setSnapshotInterruptions(0)
+  }
+
+  function prepareSnapshotReadiness(readiness: Omit<SnapshotReadiness, 'startedAt' | 'checklistConfirmed'>): SnapshotReadiness {
+    return {
+      ...readiness,
+      checklistConfirmed: true,
+      startedAt: new Date().toISOString(),
+    }
+  }
+
   function completeOnboarding(profile: {
     authMode: AuthMode
     name: string
@@ -201,7 +222,11 @@ function App() {
         usualCorrectionToday: profile.usualCorrectionToday,
       },
     }))
-    setShowSnapshotPrep(true)
+    initializeSnapshot(prepareSnapshotReadiness({
+      eyeFatigue: 'normal',
+      visionCorrection: profile.usualCorrectionToday,
+      armLengthConfirmed: true,
+    }))
   }
 
   function startCheck() {
@@ -210,21 +235,7 @@ function App() {
   }
 
   function beginSnapshot(readiness: Omit<SnapshotReadiness, 'startedAt' | 'checklistConfirmed'>) {
-    const preparedReadiness: SnapshotReadiness = {
-      ...readiness,
-      checklistConfirmed: true,
-      startedAt: new Date().toISOString(),
-    }
-    setActiveRunMode('monthly-snapshot')
-    setSnapshotReadiness(preparedReadiness)
-    setShowSnapshotPrep(false)
-    setActiveTool(visionTools[0])
-    setTestStep(0)
-    setPendingMeasurements({})
-    setPendingResultDetails({})
-    setTestStartedAt(Date.now())
-    setSnapshotResumed(false)
-    setSnapshotInterruptions(0)
+    initializeSnapshot(prepareSnapshotReadiness(readiness))
   }
 
   function recordMeasurement(value: number, details: Partial<TestResult> = {}) {

@@ -29,6 +29,14 @@ test('intro copy explains purpose, baseline, and journey without adding setup te
   assert.doesNotMatch(app.slice(app.indexOf('const introSlides'), app.indexOf('function FirstRunOnboarding')), /assessment|evaluation|diagnosis|exam-like/i)
 })
 
+test('onboarding readiness begins the first snapshot instead of remounting setup', () => {
+  assert.match(app, /const introCompleted = state\.onboarded \|\| loadOnboardingDraft\(\)\?\.introComplete === true/)
+  assert.match(app, /function initializeSnapshot\(readiness: SnapshotReadiness\)/)
+  assert.match(app, /function prepareSnapshotReadiness/)
+  assert.match(app, /initializeSnapshot\(prepareSnapshotReadiness\(\{\s*eyeFatigue: 'normal',[\s\S]*visionCorrection: profile\.usualCorrectionToday,[\s\S]*armLengthConfirmed: true,/)
+  assert.doesNotMatch(app.slice(app.indexOf('function completeOnboarding'), app.indexOf('function startCheck')), /setShowSnapshotPrep\(true\)/)
+})
+
 test('third slide carries account actions as large native-feeling buttons', () => {
   assert.match(app, /const authActions/)
   assert.match(app, /Continue with Apple/)
