@@ -518,7 +518,6 @@ const introSlides = [
     title: 'Your Vision Journey Starts Here',
     body: [
       'Track your vision over time with simple check-ins designed to help you notice gradual changes.',
-      'Create an account to begin building your baseline.',
     ],
     visual: 'timeline',
     cta: 'Next',
@@ -549,7 +548,7 @@ function IntroVisual({ type }: { type: string }) {
   if (type === 'timeline') {
     return (
       <div className="intro-visual intro-journey-timeline" aria-hidden="true">
-        {['Today', 'Baseline Established', 'Vision Journey', 'Current Snapshot'].map((label, index) => (
+        {['Today', 'Baseline', 'Journey', 'Snapshot'].map((label, index) => (
           <div className="journey-marker timeline-card" key={label} style={{ '--delay': `${index * 0.14}s` } as CSSProperties}>
             <span />
             <strong>{label}</strong>

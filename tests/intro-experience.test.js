@@ -19,13 +19,13 @@ test('first-run onboarding is a premium three-card carousel before setup details
   assert.match(app, /if \(!introComplete\)/)
 })
 
-test('intro copy explains purpose, baseline, journey, and next account action without exam language', () => {
+test('intro copy explains purpose, baseline, and journey without adding setup text or exam language', () => {
   assert.match(app, /See what eyes miss\./)
   assert.match(app, /Vision often changes gradually enough that you don’t notice it happening\./)
   assert.match(app, /Sightly helps you track changes over time with simple vision snapshots\./)
   assert.match(app, /Sightly learns what is normal for you through a few quick snapshots\./)
   assert.match(app, /Track your vision over time with simple check-ins designed to help you notice gradual changes\./)
-  assert.match(app, /Create an account to begin building your baseline\./)
+  assert.doesNotMatch(app.slice(app.indexOf('const introSlides'), app.indexOf('function FirstRunOnboarding')), /Create an account to begin building your baseline\./)
   assert.doesNotMatch(app.slice(app.indexOf('const introSlides'), app.indexOf('function FirstRunOnboarding')), /assessment|evaluation|diagnosis|exam-like/i)
 })
 
@@ -47,5 +47,7 @@ test('carousel includes liquid-glass visuals, paging, safe-area layout, and comp
   assert.match(css, /env\(safe-area-inset-top\)/)
   assert.match(css, /@media \(max-height: 780px\)/)
   assert.match(css, /@keyframes introOrbFloat/)
+  assert.match(css, /@keyframes introOrbTurn/)
+  assert.match(css, /@keyframes ambientGlassDrift/)
   assert.match(css, /@keyframes journeyFade/)
 })

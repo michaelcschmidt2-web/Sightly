@@ -498,8 +498,10 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
 
 @keyframes ringFadeIn { from { opacity: 0; transform: scale(.94); filter: blur(2px); } to { opacity: 1; transform: scale(1); filter: blur(0); } }
 @keyframes introSlideIn { from { opacity: 0; transform: translateY(10px); filter: blur(8px); } to { opacity: 1; transform: translateY(0); filter: blur(0); } }
-@keyframes introOrbFloat { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-10px) scale(1.025); } }
-@keyframes reflectiveSweep { 0%, 100% { opacity: .42; transform: translateX(-16%) rotate(0deg); } 50% { opacity: .78; transform: translateX(14%) rotate(3deg); } }
+@keyframes introOrbFloat { 0%, 100% { transform: translateY(0) scale(1); } 50% { transform: translateY(-6px) scale(1.018); } }
+@keyframes introOrbTurn { from { filter: hue-rotate(0deg) saturate(1); } to { filter: hue-rotate(9deg) saturate(1.04); } }
+@keyframes reflectiveSweep { 0%, 100% { opacity: .34; transform: translateX(-8%) rotate(0deg); } 50% { opacity: .58; transform: translateX(8%) rotate(2deg); } }
+@keyframes ambientGlassDrift { 0% { transform: translate3d(-1.5%, -1%, 0) scale(1); } 50% { transform: translate3d(1.2%, .8%, 0) scale(1.015); } 100% { transform: translate3d(2%, -1.2%, 0) scale(1.02); } }
 @keyframes nodeConnect { from { opacity: 0; transform: translateY(14px) scale(.88); filter: blur(6px); } to { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); } }
 @keyframes connectionGrow { from { opacity: 0; clip-path: inset(0 100% 0 0); } to { opacity: 1; clip-path: inset(0); } }
 @keyframes journeyFade { to { opacity: 1; transform: translateY(0); } }
@@ -525,16 +527,29 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
 .intro-frame {
   overflow: hidden;
   background:
-    radial-gradient(circle at 20% 2%, rgba(204, 222, 255, .82), transparent 36%),
-    radial-gradient(circle at 88% 22%, rgba(255, 226, 180, .7), transparent 28%),
-    radial-gradient(circle at 44% 86%, rgba(210, 219, 255, .62), transparent 32%),
-    linear-gradient(180deg, rgba(248,251,255,.92), rgba(239,246,255,.9));
+    radial-gradient(circle at 16% 4%, rgba(210, 226, 255, .86), transparent 34%),
+    radial-gradient(circle at 88% 22%, rgba(255, 226, 180, .66), transparent 28%),
+    radial-gradient(circle at 42% 88%, rgba(211, 218, 255, .58), transparent 34%),
+    linear-gradient(180deg, rgba(248,251,255,.94), rgba(239,246,255,.9));
 }
 .carousel-screen {
-  padding: max(22px, env(safe-area-inset-top)) 18px max(22px, env(safe-area-inset-bottom));
-  gap: 12px;
+  padding: max(20px, env(safe-area-inset-top)) 18px max(18px, env(safe-area-inset-bottom));
+  gap: 10px;
   overflow-x: hidden;
   overscroll-behavior-x: contain;
+}
+.carousel-screen::after {
+  content: '';
+  position: absolute;
+  inset: -18% -22%;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 22% 30%, rgba(255, 211, 150, .22), transparent 24%),
+    radial-gradient(circle at 78% 24%, rgba(126, 116, 218, .16), transparent 28%),
+    radial-gradient(circle at 48% 78%, rgba(143, 189, 248, .18), transparent 30%);
+  filter: blur(12px);
+  animation: ambientGlassDrift 52s ease-in-out infinite alternate;
 }
 .intro-carousel {
   --intro-step: 0;
@@ -547,6 +562,8 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
   transition: transform .55s cubic-bezier(.22, 1, .36, 1);
   touch-action: pan-y;
   will-change: transform;
+  position: relative;
+  z-index: 1;
 }
 .intro-slide-card {
   flex: 0 0 100%;
@@ -554,44 +571,68 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
   height: 100%;
   max-height: 100%;
   border-radius: 38px;
-  padding: 18px 18px 20px;
+  padding: clamp(18px, 4.5svh, 34px) 20px clamp(18px, 3.5svh, 28px);
   display: flex;
   flex-direction: column;
+  justify-content: center;
   overflow: hidden;
   position: relative;
   isolation: isolate;
-  box-shadow: 0 28px 70px rgba(54, 70, 108, .18), inset 0 1px 1px rgba(255,255,255,.94);
+  box-shadow:
+    0 32px 78px rgba(54, 70, 108, .16),
+    0 10px 26px rgba(255,255,255,.34),
+    inset 0 1px 1px rgba(255,255,255,.96),
+    inset 0 -28px 54px rgba(131, 158, 205, .07);
 }
-.intro-slide-card::before {
+.intro-slide-card::before,
+.intro-slide-card::after {
   content: '';
   position: absolute;
-  inset: 0;
   border-radius: inherit;
-  background: linear-gradient(125deg, rgba(255,255,255,.48), transparent 34%, rgba(255,255,255,.24) 66%, transparent 78%);
   pointer-events: none;
-  animation: reflectiveSweep 6s ease-in-out infinite;
+}
+.intro-slide-card::before {
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(125deg, rgba(255,255,255,.5), transparent 32%, rgba(255,255,255,.24) 66%, transparent 80%),
+    radial-gradient(circle at 50% 18%, rgba(255,255,255,.42), transparent 34%);
+  animation: reflectiveSweep 28s ease-in-out infinite;
+}
+.intro-slide-card::after {
+  inset: 10px;
+  z-index: -2;
+  background:
+    radial-gradient(circle at 22% 24%, rgba(255, 221, 173, .18), transparent 28%),
+    radial-gradient(circle at 76% 30%, rgba(119, 111, 217, .12), transparent 30%),
+    linear-gradient(145deg, rgba(255,255,255,.2), rgba(233,242,255,.12));
+  filter: blur(1px);
+  animation: ambientGlassDrift 46s ease-in-out infinite alternate-reverse;
 }
 .intro-slide-card .intro-visual {
-  min-height: 238px;
-  margin: 0 0 14px;
+  flex: 0 1 48%;
+  min-height: clamp(238px, 41svh, 374px);
+  margin: 0 0 clamp(14px, 2.6svh, 24px);
   transform: translateY(calc(var(--intro-step) * -1px));
 }
 .intro-slide-card .intro-copy {
-  margin-top: auto;
-  gap: 9px;
+  margin: 0 auto;
+  gap: 10px;
+  width: min(100%, 342px);
+  text-align: center;
 }
 .intro-slide-card h1 {
-  font-size: clamp(39px, 10.6vw, 52px);
-  line-height: .94;
-  letter-spacing: -2.8px;
+  font-size: clamp(40px, 10.8vw, 56px);
+  line-height: .95;
+  letter-spacing: -2.7px;
   max-width: 100%;
 }
 .intro-subtitle {
-  color: rgba(7,24,64,.7);
-  font-size: 22px;
-  line-height: 1.14;
-  letter-spacing: -.7px;
-  font-weight: 720;
+  color: rgba(7,24,64,.72);
+  font-size: clamp(21px, 5.6vw, 25px);
+  line-height: 1.12;
+  letter-spacing: -.72px;
+  font-weight: 740;
 }
 .intro-body-copy {
   display: grid;
@@ -599,21 +640,48 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
 }
 .intro-body-copy p {
   color: rgba(7,24,64,.62);
-  font-size: 15px;
-  line-height: 1.36;
+  font-size: clamp(14px, 3.65vw, 15.5px);
+  line-height: 1.42;
   font-weight: 590;
+}
+.intro-slide-baseline .intro-visual {
+  flex-basis: 62%;
+  min-height: clamp(350px, 58svh, 512px);
+  margin-bottom: clamp(8px, 1.5svh, 14px);
+}
+.intro-slide-baseline .intro-copy {
+  gap: 7px;
+}
+.intro-slide-baseline h1 {
+  font-size: clamp(28px, 7.2vw, 36px);
+  letter-spacing: -1.55px;
+}
+.intro-slide-timeline .intro-visual {
+  flex-basis: 30%;
+  min-height: clamp(178px, 27svh, 246px);
+  margin-bottom: clamp(14px, 2.2svh, 20px);
+}
+.intro-slide-timeline h1 {
+  font-size: clamp(31px, 8.2vw, 42px);
+  letter-spacing: -1.9px;
+}
+.intro-slide-timeline .intro-copy {
+  gap: 9px;
 }
 .intro-auth-actions {
   gap: 9px;
-  margin-top: 14px;
+  margin: clamp(16px, 2.5svh, 22px) auto 0;
+  width: min(100%, 326px);
 }
 .intro-auth-actions .glass-button {
-  min-height: 52px;
-  padding: 13px 16px;
+  min-height: 51px;
+  padding: 12px 16px;
   font-size: 15px;
 }
 .intro-progress {
-  margin: 12px 0 0;
+  margin: 10px 0 0;
+  position: relative;
+  z-index: 2;
 }
 .intro-progress button {
   width: 8px;
@@ -627,40 +695,65 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
 }
 .intro-progress button.active {
   width: 28px;
-  background: rgba(7,24,64,.6);
+  background: rgba(7,24,64,.58);
 }
 .intro-next {
   flex: 0 0 auto;
   margin-top: 8px;
   min-height: 56px;
+  position: relative;
+  z-index: 2;
 }
 .intro-orb-wrap .intro-orb {
-  width: min(230px, 63vw);
+  width: min(302px, 76vw);
   background:
     radial-gradient(circle at 28% 20%, rgba(255,255,255,1), rgba(255,255,255,.3) 16%, transparent 29%),
-    radial-gradient(circle at 72% 72%, rgba(114, 109, 222, .26), transparent 34%),
-    radial-gradient(circle at 18% 72%, rgba(230, 160, 80, .24), transparent 30%),
-    repeating-conic-gradient(from 10deg, rgba(73,97,142,.12) 0deg, transparent 3deg, rgba(255,255,255,.14) 6deg),
-    linear-gradient(145deg, rgba(255,255,255,.85), rgba(218,234,255,.48) 46%, rgba(255,255,255,.22));
+    radial-gradient(circle at 72% 72%, rgba(114, 109, 222, .27), transparent 34%),
+    radial-gradient(circle at 18% 72%, rgba(230, 160, 80, .25), transparent 30%),
+    repeating-conic-gradient(from 10deg, rgba(73,97,142,.1) 0deg, transparent 3deg, rgba(255,255,255,.15) 6deg),
+    linear-gradient(145deg, rgba(255,255,255,.86), rgba(218,234,255,.5) 46%, rgba(255,255,255,.24));
+  animation: introOrbFloat 18s ease-in-out infinite, introOrbTurn 60s linear infinite;
 }
 .intro-baseline-path,
 .intro-journey-timeline {
   align-content: center;
-  gap: 10px;
+  justify-items: center;
+  gap: 18px;
+}
+.intro-journey-timeline {
+  grid-template-columns: repeat(4, 42px);
+  width: min(260px, 90%);
+  margin: 0 auto;
+  gap: 14px;
+  position: relative;
+}
+.intro-journey-timeline::before {
+  content: '';
+  position: absolute;
+  left: 24px;
+  right: 24px;
+  top: 50%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(97,128,172,.28), transparent);
 }
 .milestone-card,
 .timeline-card {
   position: relative;
-  width: min(246px, 82%);
-  min-height: 48px;
+  width: min(286px, 88%);
+  min-height: 62px;
   height: auto;
-  border-radius: 20px;
-  padding: 13px 16px;
+  border-radius: 24px;
+  padding: 17px 20px;
   display: flex;
   align-items: center;
-  color: rgba(7,24,64,.78);
+  justify-content: center;
+  color: rgba(7,24,64,.8);
   font-weight: 780;
-  background: linear-gradient(145deg, rgba(255,255,255,.86), rgba(235,244,255,.56));
+  background: linear-gradient(145deg, rgba(255,255,255,.74), rgba(235,244,255,.46));
+  border: 1px solid rgba(255,255,255,.72);
+  box-shadow: 0 18px 42px rgba(64, 82, 125, .12), inset 0 1px 1px rgba(255,255,255,.88);
+  backdrop-filter: blur(26px) saturate(1.35);
+  -webkit-backdrop-filter: blur(26px) saturate(1.35);
   opacity: 0;
   transform: translateY(10px);
   animation: journeyFade .64s cubic-bezier(.2,1,.2,1) forwards;
@@ -672,62 +765,90 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
   content: '';
   position: absolute;
   left: 50%;
-  bottom: -18px;
+  bottom: -20px;
   width: 1px;
-  height: 18px;
-  background: linear-gradient(180deg, rgba(97,128,172,.28), transparent);
+  height: 20px;
+  background: linear-gradient(180deg, rgba(97,128,172,.32), transparent);
 }
 .milestone-card span,
 .timeline-card strong {
-  font-size: 14px;
-  letter-spacing: -.2px;
+  font-size: 15px;
+  letter-spacing: -.22px;
+}
+.intro-baseline-path .milestone-card {
+  width: min(310px, 92%);
+  min-height: 72px;
+}
+.intro-baseline-path .milestone-card span {
+  font-size: 16px;
 }
 .timeline-card {
+  min-height: 42px;
+  width: 42px;
   display: grid;
-  grid-template-columns: 24px 1fr;
-  gap: 10px;
+  grid-template-columns: 1fr;
+  place-items: center;
+  padding: 0;
+  border-radius: 999px;
+}
+.intro-journey-timeline .timeline-card::after { display: none; }
+.intro-journey-timeline .timeline-card strong {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
 }
 .timeline-card span {
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  background: radial-gradient(circle, #fff, rgba(135,172,216,.5));
-  box-shadow: 0 0 0 8px rgba(255,255,255,.32);
+  background: radial-gradient(circle, #fff, rgba(135,172,216,.52));
+  box-shadow: 0 0 0 8px rgba(255,255,255,.34), 0 10px 26px rgba(73,103,146,.1);
 }
 .baseline-connection { display: none; }
 @media (max-height: 780px) {
   .carousel-screen { padding: max(10px, env(safe-area-inset-top)) 14px max(10px, env(safe-area-inset-bottom)); gap: 5px; }
-  .intro-slide-card { border-radius: 28px; padding: 10px 12px 12px; overflow: hidden; }
-  .intro-slide-card .intro-visual { min-height: 94px; margin-bottom: 6px; }
-  .intro-slide-baseline .intro-visual { min-height: 78px; gap: 5px; }
-  .intro-slide-timeline .intro-visual { min-height: 54px; gap: 4px; }
-  .intro-baseline-path, .intro-journey-timeline { grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: center; justify-items: stretch; }
-  .intro-baseline-path .milestone-card, .intro-journey-timeline .timeline-card { width: 100%; }
-  .intro-journey-timeline .timeline-card { display: flex; justify-content: center; text-align: center; }
-  .intro-journey-timeline .timeline-card span { display: none; }
-  .intro-baseline-path .milestone-card::before, .intro-journey-timeline .timeline-card::after { display: none; }
-  .intro-slide-orb .intro-copy { margin-top: auto; }
-  .intro-slide-baseline .intro-copy, .intro-slide-timeline .intro-copy { margin-top: 0; }
-  .intro-orb-wrap .intro-orb { width: min(104px, 42vw); }
-  .intro-slide-card h1 { font-size: clamp(27px, 8.2vw, 34px); letter-spacing: -1.6px; line-height: .96; }
-  .intro-slide-baseline h1 { font-size: clamp(22px, 6.5vw, 28px); letter-spacing: -1.1px; line-height: .98; }
-  .intro-slide-timeline h1 { font-size: clamp(20px, 6vw, 25px); letter-spacing: -1px; line-height: .96; }
-  .intro-subtitle { font-size: 16px; line-height: 1.1; }
+  .intro-slide-card { border-radius: 28px; padding: 12px 14px 12px; justify-content: center; overflow: hidden; }
+  .intro-slide-card .intro-visual { min-height: 132px; margin-bottom: 8px; }
+  .intro-slide-baseline .intro-visual { min-height: 220px; gap: 8px; }
+  .intro-slide-timeline .intro-visual { min-height: 96px; gap: 6px; }
+  .intro-slide-card .intro-copy { gap: 6px; width: min(100%, 322px); }
+  .intro-orb-wrap .intro-orb { width: min(178px, 54vw); }
+  .intro-slide-card h1 { font-size: clamp(30px, 8.6vw, 38px); letter-spacing: -1.7px; line-height: .97; }
+  .intro-slide-baseline h1 { font-size: clamp(23px, 6.3vw, 29px); letter-spacing: -1.05px; line-height: 1; }
+  .intro-slide-timeline h1 { font-size: clamp(24px, 6.6vw, 31px); letter-spacing: -1.1px; line-height: 1; }
+  .intro-subtitle { font-size: 17px; line-height: 1.12; }
   .intro-body-copy { gap: 4px; }
-  .intro-body-copy p { font-size: 12px; line-height: 1.2; }
-  .intro-slide-baseline .intro-body-copy p { font-size: 10.5px; line-height: 1.13; }
-  .intro-slide-timeline .intro-body-copy p { font-size: 10px; line-height: 1.1; }
-  .milestone-card, .timeline-card { min-height: 24px; padding: 4px 8px; border-radius: 12px; }
-  .milestone-card span, .timeline-card strong { font-size: 10px; }
-  .milestone-card:not(:last-of-type)::before, .timeline-card:not(:last-of-type)::after { bottom: -6px; height: 6px; }
-  .intro-auth-actions { gap: 4px; margin-top: 5px; }
+  .intro-body-copy p { font-size: 11.6px; line-height: 1.25; }
+  .intro-slide-baseline .intro-body-copy p { font-size: 10.6px; line-height: 1.16; }
+  .intro-slide-timeline .intro-body-copy p { font-size: 11px; line-height: 1.18; }
+  .milestone-card, .timeline-card { min-height: 40px; padding: 9px 12px; border-radius: 15px; width: min(244px, 84%); }
+  .intro-baseline-path { gap: 7px; }
+  .intro-baseline-path .milestone-card { width: min(228px, 86%); min-height: 38px; padding: 8px 12px; }
+  .intro-baseline-path .milestone-card span { font-size: 11.5px; }
+  .intro-journey-timeline { width: min(242px, 92%); gap: 10px; grid-template-columns: repeat(4, 38px); }
+  .intro-journey-timeline .timeline-card { min-height: 38px; width: 38px; padding: 0; grid-template-columns: 1fr; }
+  .intro-journey-timeline .timeline-card span { width: 12px; height: 12px; box-shadow: 0 0 0 5px rgba(255,255,255,.3); }
+  .milestone-card span, .timeline-card strong { font-size: 11px; }
+  .milestone-card:not(:last-of-type)::before, .timeline-card:not(:last-of-type)::after { bottom: -9px; height: 9px; }
+  .intro-auth-actions { gap: 4px; margin-top: 8px; width: min(100%, 306px); }
   .intro-auth-actions .glass-button { height: 44px; min-height: 44px; padding: 6px 10px; font-size: 12.5px; line-height: 1.05; }
+  .intro-progress { margin-top: 6px; }
   .intro-next { min-height: 50px; }
 }
 @media (max-width: 380px) {
-  .intro-slide-card h1 { font-size: clamp(29px, 9vw, 36px); }
+  .intro-slide-card h1 { font-size: clamp(30px, 9vw, 38px); }
+  .intro-slide-baseline h1 { font-size: clamp(23px, 6.4vw, 30px); }
+  .intro-slide-timeline h1 { font-size: clamp(24px, 6.8vw, 32px); }
   .intro-subtitle { font-size: 17px; }
-  .intro-body-copy p { font-size: 12.5px; }
+  .intro-body-copy p { font-size: 12px; }
+}
+@media (min-height: 860px) {
+  .intro-slide-card .intro-visual { min-height: clamp(284px, 45svh, 420px); }
+  .intro-slide-baseline .intro-visual { min-height: clamp(388px, 55svh, 500px); }
+  .intro-slide-timeline .intro-visual { min-height: clamp(210px, 30svh, 280px); }
 }
 
 /* Reference-matched Apple liquid glass home polish */
