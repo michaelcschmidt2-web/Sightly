@@ -611,8 +611,9 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
 }
 .intro-slide-card .intro-visual {
   flex: 0 1 48%;
+  width: 100%;
   min-height: clamp(238px, 41svh, 374px);
-  margin: 0 0 clamp(14px, 2.6svh, 24px);
+  margin: 0 auto clamp(16px, 2.8svh, 26px);
   transform: translateY(calc(var(--intro-step) * -1px));
 }
 .intro-slide-card .intro-copy {
@@ -620,12 +621,17 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
   gap: 10px;
   width: min(100%, 342px);
   text-align: center;
+  justify-items: center;
+  align-items: center;
 }
 .intro-slide-card h1 {
   font-size: clamp(40px, 10.8vw, 56px);
   line-height: .95;
   letter-spacing: -2.7px;
   max-width: 100%;
+  margin-inline: auto;
+  text-align: center;
+  text-wrap: balance;
 }
 .intro-subtitle {
   color: rgba(7,24,64,.72);
@@ -637,20 +643,25 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
 .intro-body-copy {
   display: grid;
   gap: 8px;
+  justify-items: center;
 }
 .intro-body-copy p {
   color: rgba(7,24,64,.62);
   font-size: clamp(14px, 3.65vw, 15.5px);
   line-height: 1.42;
   font-weight: 590;
+  max-width: 31ch;
+  margin-inline: auto;
+  text-align: center;
 }
 .intro-slide-baseline .intro-visual {
   flex-basis: 62%;
   min-height: clamp(350px, 58svh, 512px);
-  margin-bottom: clamp(8px, 1.5svh, 14px);
+  margin-bottom: clamp(12px, 2svh, 20px);
 }
 .intro-slide-baseline .intro-copy {
-  gap: 7px;
+  gap: 10px;
+  width: min(100%, 326px);
 }
 .intro-slide-baseline h1 {
   font-size: clamp(28px, 7.2vw, 36px);
@@ -659,19 +670,21 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
 .intro-slide-timeline .intro-visual {
   flex-basis: 30%;
   min-height: clamp(178px, 27svh, 246px);
-  margin-bottom: clamp(14px, 2.2svh, 20px);
+  margin-bottom: clamp(16px, 2.6svh, 24px);
 }
 .intro-slide-timeline h1 {
   font-size: clamp(31px, 8.2vw, 42px);
   letter-spacing: -1.9px;
 }
 .intro-slide-timeline .intro-copy {
-  gap: 9px;
+  gap: 10px;
+  width: min(100%, 318px);
 }
 .intro-auth-actions {
   gap: 9px;
-  margin: clamp(16px, 2.5svh, 22px) auto 0;
+  margin: clamp(18px, 2.8svh, 24px) auto 0;
   width: min(100%, 326px);
+  align-items: center;
 }
 .intro-auth-actions .glass-button {
   min-height: 51px;
@@ -679,9 +692,13 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
   font-size: 15px;
 }
 .intro-progress {
-  margin: 10px 0 0;
+  margin: 10px auto 0;
   position: relative;
   z-index: 2;
+  width: 64px;
+  align-self: center;
+  display: flex;
+  justify-content: center;
 }
 .intro-progress button {
   width: 8px;
@@ -699,8 +716,9 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
 }
 .intro-next {
   flex: 0 0 auto;
-  margin-top: 8px;
+  margin: 8px auto 0;
   min-height: 56px;
+  width: min(100%, 326px);
   position: relative;
   z-index: 2;
 }
@@ -814,7 +832,9 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
   .intro-slide-card .intro-visual { min-height: 132px; margin-bottom: 8px; }
   .intro-slide-baseline .intro-visual { min-height: 220px; gap: 8px; }
   .intro-slide-timeline .intro-visual { min-height: 96px; gap: 6px; }
-  .intro-slide-card .intro-copy { gap: 6px; width: min(100%, 322px); }
+  .intro-slide-card .intro-copy { gap: 6px; width: min(100%, 322px); justify-items: center; text-align: center; }
+  .intro-slide-baseline .intro-copy { width: min(100%, 300px); }
+  .intro-slide-timeline .intro-copy { width: min(100%, 292px); }
   .intro-orb-wrap .intro-orb { width: min(178px, 54vw); }
   .intro-slide-card h1 { font-size: clamp(30px, 8.6vw, 38px); letter-spacing: -1.7px; line-height: .97; }
   .intro-slide-baseline h1 { font-size: clamp(23px, 6.3vw, 29px); letter-spacing: -1.05px; line-height: 1; }
@@ -823,7 +843,7 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
   .intro-body-copy { gap: 4px; }
   .intro-body-copy p { font-size: 11.6px; line-height: 1.25; }
   .intro-slide-baseline .intro-body-copy p { font-size: 10.6px; line-height: 1.16; }
-  .intro-slide-timeline .intro-body-copy p { font-size: 11px; line-height: 1.18; }
+  .intro-slide-timeline .intro-body-copy p { font-size: 11px; line-height: 1.28; }
   .milestone-card, .timeline-card { min-height: 40px; padding: 9px 12px; border-radius: 15px; width: min(244px, 84%); }
   .intro-baseline-path { gap: 7px; }
   .intro-baseline-path .milestone-card { width: min(228px, 86%); min-height: 38px; padding: 8px 12px; }
