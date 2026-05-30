@@ -326,6 +326,9 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
 .onboarding-group { display: grid; gap: 10px; }
 .onboarding-group > p { color: rgba(7,24,64,.62); font-weight: 740; }
 .setup-grid { grid-template-columns: repeat(2, 1fr); }
+.compact-setup-grid { gap: 8px; }
+.compact-setup-list { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.compact-setup-list button:last-child { grid-column: 1 / -1; }
 .setup-grid button, .setup-list button { border: 0; border-radius: 22px; padding: 14px 12px; min-height: 48px; background: rgba(255,255,255,.5); color: rgba(7,24,64,.68); font-weight: 780; box-shadow: inset 0 1px 0 rgba(255,255,255,.82); }
 .setup-grid button.selected, .setup-list button.selected { background: rgba(255,255,255,.88); color: var(--ink); box-shadow: 0 14px 30px rgba(83,105,142,.12), inset 0 1px 0 #fff; }
 .setup-list { display: grid; gap: 9px; }
@@ -377,6 +380,9 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
 .sharpness-screen h1 { margin-bottom: 14px; }
 .sharpness-instructions { border-radius: 32px; padding: 20px; margin: 18px 0; text-align: left; }
 .sharpness-instructions ul { margin: 10px 0 0; padding-left: 20px; color: rgba(23,32,44,.72); line-height: 1.55; font-weight: 650; }
+.sharpness-helper-inline { display: grid; gap: 4px; padding: 14px 16px; margin: 8px 0 10px; border-radius: 24px; }
+.sharpness-helper-inline p { margin: 0; color: rgba(23,32,44,.74); font-weight: 780; line-height: 1.25; }
+.sharpness-helper-inline small { color: rgba(23,32,44,.52); font-weight: 650; line-height: 1.3; }
 .eye-mode-picker { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 4px 0 18px; padding: 6px; border-radius: 999px; background: rgba(255,255,255,.5); box-shadow: inset 0 1px 0 rgba(255,255,255,.85); }
 .eye-mode-picker button { border: 0; border-radius: 999px; padding: 11px 8px; background: transparent; color: rgba(23,32,44,.54); font-weight: 800; cursor: pointer; }
 .eye-mode-picker button.active { background: rgba(255,255,255,.86); color: var(--ink); box-shadow: 0 10px 24px rgba(83,105,142,.12), inset 0 1px 0 #fff; }

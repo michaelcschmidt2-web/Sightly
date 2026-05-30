@@ -660,7 +660,7 @@ function SightlyIntroExperience({ onBeginSetup }: { onBeginSetup: (authMode: Aut
 function FirstRunOnboarding({ onComplete }: { onComplete: (profile: OnboardingProfile) => void }) {
   const draft = loadOnboardingDraft()
   const [introComplete, setIntroComplete] = useState(() => draft?.introComplete ?? false)
-  const [step, setStep] = useState(() => draft?.step ?? 0)
+  const [step, setStep] = useState(() => Math.min(Math.max(draft?.step ?? 1, 1), 2))
   const [profile, setProfile] = useState<OnboardingProfile>(() => draft?.profile ?? {
     authMode: 'guest',
     name: '',
@@ -675,7 +675,7 @@ function FirstRunOnboarding({ onComplete }: { onComplete: (profile: OnboardingPr
   }, [introComplete, step, profile])
 
   const updateProfile = (patch: Partial<OnboardingProfile>) => setProfile((current) => ({ ...current, ...patch }))
-  const next = () => setStep((current) => Math.min(current + 1, 4))
+  const next = () => setStep((current) => Math.min(current + 1, 2))
   const completeSetup = () => {
     saveOnboardingDraft(null)
     onComplete(profile)
@@ -694,54 +694,32 @@ function FirstRunOnboarding({ onComplete }: { onComplete: (profile: OnboardingPr
       <div className="ambient ambient-a" />
       <div className="ambient ambient-b" />
       <section className="phone-frame onboarding-frame">
-        {step === 0 && (
-          <div className="screen onboarding-screen welcome-step">
-            <div className="onboarding-orb" aria-hidden="true" />
-            <p className="eyebrow">Sightly</p>
-            <h1>See what eyes miss.</h1>
-            <p className="onboarding-subtitle">Notice how your vision changes over time.</p>
-            <div className="onboarding-actions">
-              <button className="glass-button primary" onClick={() => { updateProfile({ authMode: 'apple' }); next() }}>Continue with Apple</button>
-              <button className="glass-button" onClick={() => { updateProfile({ authMode: 'google' }); next() }}>Continue with Google</button>
-              <button className="glass-button" onClick={() => { updateProfile({ authMode: 'email' }); next() }}>Continue with Email</button>
-              <button className="text-button centered" onClick={() => { updateProfile({ authMode: 'guest' }); next() }}>Continue as Guest</button>
-            </div>
-            <p className="disclaimer">Sightly shows trends and does not replace eye care.</p>
-          </div>
-        )}
-
         {step === 1 && (
-          <div className="screen onboarding-screen profile-step">
-            <p className="eyebrow">Basic Profile</p>
+          <div className="screen onboarding-screen profile-step consolidated-profile-step">
+            <p className="eyebrow">Profile Setup</p>
             <h1>A few details.</h1>
             <label className="soft-field">First name<input autoComplete="given-name" enterKeyHint="next" value={profile.name} onChange={(event) => updateProfile({ name: event.target.value })} onFocus={(event) => event.currentTarget.scrollIntoView({ block: 'center' })} placeholder="First name" /></label>
             <div className="onboarding-group">
               <p>Age range</p>
-              <div className="choice-grid setup-grid">
+              <div className="choice-grid setup-grid compact-setup-grid">
                 {ageRangeOptions.map((ageRange) => <button className={profile.ageRange === ageRange ? 'selected' : ''} key={ageRange} onClick={() => updateProfile({ ageRange })}>{ageRange}</button>)}
               </div>
             </div>
             <div className="onboarding-group">
-              <p>Do you currently wear glasses or contacts?</p>
-              <div className="choice-grid setup-grid">
+              <p>Glasses / Contacts</p>
+              <div className="choice-grid setup-grid compact-setup-grid">
                 {correctionProfileOptions.map((option) => <button className={profile.correctionProfile === option.value ? 'selected' : ''} key={option.value} onClick={() => updateProfile({ correctionProfile: option.value })}>{option.label}</button>)}
               </div>
             </div>
-            <button className="glass-button primary setup-next" onClick={next}>Continue</button>
-          </div>
-        )}
-
-        {step === 2 && (
-          <div className="screen onboarding-screen profile-step">
-            <p className="eyebrow">Eye Care Context</p>
-            <h1>Last eye exam?</h1>
-            <div className="choice-list setup-list">
-              {lastExamOptions.map((option) => <button className={profile.lastEyeExam === option.value ? 'selected' : ''} key={option.value} onClick={() => updateProfile({ lastEyeExam: option.value })}>{option.label}</button>)}
+            <div className="onboarding-group">
+              <p>Last eye exam</p>
+              <div className="choice-list setup-list compact-setup-list">
+                {lastExamOptions.map((option) => <button className={profile.lastEyeExam === option.value ? 'selected' : ''} key={option.value} onClick={() => updateProfile({ lastEyeExam: option.value })}>{option.label}</button>)}
+              </div>
             </div>
-            <div className="setup-note glass-card">
-              <h2>Are you wearing your usual vision correction today?</h2>
-              <p>Use similar conditions for the most reliable baseline.</p>
-              <div className="choice-grid setup-grid">
+            <div className="onboarding-group">
+              <p>Vision correction today</p>
+              <div className="choice-grid setup-grid compact-setup-grid">
                 {correctionOptions.map((option) => <button className={profile.usualCorrectionToday === option.value ? 'selected' : ''} key={option.value} onClick={() => updateProfile({ usualCorrectionToday: option.value })}>{option.label}</button>)}
               </div>
             </div>
@@ -749,25 +727,16 @@ function FirstRunOnboarding({ onComplete }: { onComplete: (profile: OnboardingPr
           </div>
         )}
 
-        {step === 3 && (
-          <div className="screen onboarding-screen baseline-step">
+        {step === 2 && (
+          <div className="screen onboarding-screen baseline-step consolidated-baseline-step">
             <p className="eyebrow">Build Your Baseline</p>
-            <h1>Learn your normal range.</h1>
-            <p className="onboarding-subtitle">Three snapshots help Sightly learn what is typical for you.</p>
-            <p className="quiet-copy">Future snapshots compare against your own baseline.</p>
-            <div className="baseline-pill glass-card"><span>Snapshot 1 of 3</span><strong>Ready to Begin</strong></div>
-            <button className="glass-button primary setup-next" onClick={next}>Start First Snapshot</button>
-          </div>
-        )}
-
-        {step === 4 && (
-          <div className="screen onboarding-screen baseline-step">
-            <p className="eyebrow">Ready</p>
-            <h1>Start with steady conditions.</h1>
+            <h1>Start with Snapshot 1.</h1>
+            <p className="onboarding-subtitle">Three snapshots help Sightly learn what is normal for you.</p>
+            <div className="baseline-pill glass-card"><span>Snapshot 1 of 3</span><strong>Ready now</strong></div>
             <div className="readiness-list onboarding-readiness">
               {readinessChecklist.map((item) => <div key={item}><span>✓</span>{item}</div>)}
             </div>
-            <button className="glass-button primary setup-next" onClick={completeSetup}>Begin Snapshot</button>
+            <button className="glass-button primary setup-next" onClick={completeSetup}>Start First Snapshot</button>
             <p className="disclaimer">Your Vision Score unlocks after 3 snapshots.</p>
           </div>
         )}
@@ -777,11 +746,10 @@ function FirstRunOnboarding({ onComplete }: { onComplete: (profile: OnboardingPr
 }
 
 const readinessChecklist = [
-  'Set brightness high',
-  'Choose steady lighting',
-  'Keep a comfortable viewing distance',
-  'Wear your usual glasses or contacts',
-  'Skip if your eyes feel unusually tired',
+  'Brightness high',
+  'Steady lighting',
+  'Similar viewing distance',
+  'Wear your usual correction',
 ]
 
 const peripheralAnswerOptions: Array<{ value: PeripheralDirection; label: string }> = [
@@ -2235,7 +2203,7 @@ function SharpnessThresholdTest({
   onRecord: (value: number, details?: Partial<TestResult>) => void
   onCancel: () => void
 }) {
-  const [started, setStarted] = useState(false)
+  const [started] = useState(true)
   const [eyeMode, setEyeMode] = useState<SharpnessEyeMode>('both')
   const [rowIndex, setRowIndex] = useState(0)
   const [letters, setLetters] = useState(() => randomSharpnessRow())
@@ -2312,40 +2280,25 @@ function SharpnessThresholdTest({
     })
   }
 
-  if (!started) {
-    return (
-      <div className="screen test-screen sharpness-screen">
-        <button className="text-button" onClick={onCancel}>Cancel</button>
-        <p className="small-muted">{testProgressLabel(step, total)} · Smallest readable row</p>
-        <h1>Visual Sharpness</h1>
-        <section className="sharpness-instructions glass-card">
-          <p className="eyebrow">Before you start</p>
-          <ul>
-            <li>Hold your phone at arm’s length.</li>
-            <li>Use a similar distance each time.</li>
-            <li>Enter the 6 letters above.</li>
-            <li>You can use your phone’s dictation if typing is difficult.</li>
-          </ul>
-        </section>
-        <div className="eye-mode-picker" aria-label="Choose eye mode">
-          {(['both', 'left', 'right'] as SharpnessEyeMode[]).map((mode) => (
-            <button className={eyeMode === mode ? 'active' : ''} key={mode} onClick={() => setEyeMode(mode)}>
-              {mode === 'both' ? 'Both eyes' : mode === 'left' ? 'Left eye' : 'Right eye'}
-            </button>
-          ))}
-        </div>
-        <button className="glass-button primary sharpness-start" onClick={() => {
-          setStarted(true)
-          setRoundStartedAt(performance.now())
-        }}>Begin sharpness check</button>
-      </div>
-    )
-  }
+  if (!started) return null
 
   return (
     <div className="screen test-screen sharpness-screen">
       <button className="text-button" onClick={onCancel}>Cancel</button>
       <p className="small-muted">{testProgressLabel(step, total)} · Finding your threshold</p>
+      <h1>Visual Sharpness</h1>
+      <section className="sharpness-instructions sharpness-helper-inline glass-card" aria-label="Sharpness instructions">
+        <p>Hold phone at arm’s length.</p>
+        <p>Type the 6 letters you see.</p>
+        <small>You can use dictation if typing is difficult.</small>
+      </section>
+      <div className="eye-mode-picker" aria-label="Choose eye mode">
+        {(['both', 'left', 'right'] as SharpnessEyeMode[]).map((mode) => (
+          <button className={eyeMode === mode ? 'active' : ''} key={mode} onClick={() => setEyeMode(mode)}>
+            {mode === 'both' ? 'Both eyes' : mode === 'left' ? 'Left eye' : 'Right eye'}
+          </button>
+        ))}
+      </div>
       <div className="difficulty-track" aria-label={`Difficulty ${progress}%`}>
         <span style={{ width: `${progress}%` }} />
       </div>

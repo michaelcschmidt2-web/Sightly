@@ -29,12 +29,38 @@ test('intro copy explains purpose, baseline, and journey without adding setup te
   assert.doesNotMatch(app.slice(app.indexOf('const introSlides'), app.indexOf('function FirstRunOnboarding')), /assessment|evaluation|diagnosis|exam-like/i)
 })
 
+test('first-run setup is consolidated into one profile screen and one baseline readiness screen', () => {
+  const onboarding = app.slice(app.indexOf('function FirstRunOnboarding'), app.indexOf('const readinessChecklist'))
+  assert.match(onboarding, /setStep\(1\)/)
+  assert.match(onboarding, /Math\.min\(current \+ 1, 2\)/)
+  assert.match(onboarding, /<p className="eyebrow">Profile Setup<\/p>/)
+  assert.match(onboarding, /First name/)
+  assert.match(onboarding, /Age range/)
+  assert.match(onboarding, /Glasses \/ Contacts/)
+  assert.match(onboarding, /Last eye exam/)
+  assert.match(onboarding, /Vision correction today/)
+  assert.match(onboarding, /<p className="eyebrow">Build Your Baseline<\/p>/)
+  assert.match(onboarding, /Snapshot 1 of 3/)
+  assert.match(onboarding, /Three snapshots help Sightly learn what is normal for you\./)
+  assert.match(onboarding, /Start First Snapshot/)
+  assert.doesNotMatch(onboarding, /step === 3|step === 4|Begin Snapshot/)
+})
+
 test('onboarding readiness begins the first snapshot instead of remounting setup', () => {
   assert.match(app, /const introCompleted = state\.onboarded \|\| loadOnboardingDraft\(\)\?\.introComplete === true/)
   assert.match(app, /function initializeSnapshot\(readiness: SnapshotReadiness\)/)
   assert.match(app, /function prepareSnapshotReadiness/)
   assert.match(app, /initializeSnapshot\(prepareSnapshotReadiness\(\{\s*eyeFatigue: 'normal',[\s\S]*visionCorrection: profile\.usualCorrectionToday,[\s\S]*armLengthConfirmed: true,/)
   assert.doesNotMatch(app.slice(app.indexOf('function completeOnboarding'), app.indexOf('function startCheck')), /setShowSnapshotPrep\(true\)/)
+})
+
+test('visual sharpness starts on the first target with compact inline instructions', () => {
+  const sharpness = app.slice(app.indexOf('function SharpnessThresholdTest'), app.indexOf('function formatExamRange'))
+  assert.match(sharpness, /useState\(true\)/)
+  assert.match(sharpness, /Hold phone at arm’s length\./)
+  assert.match(sharpness, /Type the 6 letters you see\./)
+  assert.match(sharpness, /You can use dictation if typing is difficult\./)
+  assert.doesNotMatch(sharpness, /Before you start|Begin sharpness check/)
 })
 
 test('third slide carries account actions as large native-feeling buttons', () => {
