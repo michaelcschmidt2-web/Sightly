@@ -153,6 +153,7 @@ function App() {
   const [testStartedAt, setTestStartedAt] = useState(() => Date.now())
   const [snapshotResumed, setSnapshotResumed] = useState(false)
   const [snapshotInterruptions, setSnapshotInterruptions] = useState(0)
+  const [pendingCompletedSnapshot, setPendingCompletedSnapshot] = useState<{ check: SightlyState['checks'][number]; snapshotNumber: number } | null>(null)
   const [userId, setUserId] = useState<string | null>(null)
   const [guestId, setGuestId] = useState<string | null>(null)
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(null)
@@ -401,6 +402,7 @@ function App() {
       setPendingMeasurements({})
       setPendingResultDetails({})
       setTestStep(0)
+      setPendingCompletedSnapshot({ check, snapshotNumber: nextCompleted })
       setTab('home')
       setSavedSession(null)
       return
@@ -501,6 +503,14 @@ function App() {
             tool={activeTool}
             onRecord={recordMeasurement}
             onCancel={() => { setActiveTool(null); setPendingMeasurements({}); setPendingResultDetails({}); setSavedSession(null) }}
+          />
+        ) : pendingCompletedSnapshot ? (
+          <SnapshotCompleteScreen
+            baselineReady={baselineReady}
+            check={pendingCompletedSnapshot.check}
+            onContinue={() => { setPendingCompletedSnapshot(null); setTab('home') }}
+            snapshotNumber={pendingCompletedSnapshot.snapshotNumber}
+            typicalRangeLabel={typicalRangeLabel}
           />
         ) : (
           <>
@@ -963,6 +973,100 @@ function SnapshotReadinessScreen({
   )
 }
 
+function SnapshotCompleteScreen({
+  baselineReady,
+  check,
+  onContinue,
+  snapshotNumber,
+  typicalRangeLabel,
+}: {
+  baselineReady: boolean
+  check: SightlyState['checks'][number]
+  onContinue: () => void
+  snapshotNumber: number
+  typicalRangeLabel: string
+}) {
+  const visibleResults = check.testResults.filter((result) => result.capability !== 'visualResponse')
+  const resultLabels: Record<CapabilityId, string> = {
+    sharpness: 'Visual Sharpness',
+    contrast: 'Contrast Sensitivity',
+    peripheralAwareness: 'Peripheral Awareness',
+    visualResponse: 'Recognition Threshold',
+  }
+  const confidenceLabel = `${check.confidence}%`
+  const mainInsight = check.explanation?.summary
+    ?? (baselineReady
+      ? 'Your baseline is ready. Future snapshots can now compare against your typical range.'
+      : 'Sightly is learning your normal visual range.')
+
+  return (
+    <div className="screen post-snapshot-results-screen">
+      <header className="snapshot-complete-hero glass-card">
+        <p className="section-kicker">Snapshot Complete</p>
+        <h1>Snapshot Complete</h1>
+        {!baselineReady ? (
+          <>
+            <strong>Snapshot {snapshotNumber} of 3 complete</strong>
+            <p>Sightly is learning your normal visual range.</p>
+          </>
+        ) : (
+          <>
+            <strong>{check.score ?? '—'}</strong>
+            <p>Vision Score</p>
+          </>
+        )}
+      </header>
+
+      {!baselineReady ? (
+        <section className="snapshot-complete-card glass-card" aria-label="Early Results">
+          <p className="section-kicker">Early Results</p>
+          <h2>Early snapshot results</h2>
+          <div className="snapshot-result-list">
+            {visibleResults.map((result) => (
+              <div key={result.id}>
+                <span>{resultLabels[result.capability]}</span>
+                <b>{formatMeasurement(result)}</b>
+              </div>
+            ))}
+            <div>
+              <span>Confidence</span>
+              <b>{confidenceLabel}</b>
+            </div>
+          </div>
+          <p className="snapshot-unlock-copy">Your Vision Score unlocks after 3 baseline snapshots.</p>
+        </section>
+      ) : (
+        <section className="snapshot-complete-card glass-card" aria-label="Snapshot Summary">
+          <div className="snapshot-summary-grid">
+            <Metric label="Vision Score" value={check.score ?? '—'} />
+            <Metric label="Typical Range" value={typicalRangeLabel} />
+            <Metric label="Confidence" value={confidenceLabel} />
+          </div>
+          <div className="snapshot-breakdown">
+            <p className="section-kicker">Test breakdown</p>
+            <div className="snapshot-result-list">
+              {visibleResults.map((result) => (
+                <div key={result.id}>
+                  <span>{resultLabels[result.capability]}</span>
+                  <b>{formatMeasurement(result)}</b>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="snapshot-main-insight">
+            <p className="section-kicker">Main insight</p>
+            <h2>{mainInsight}</h2>
+          </div>
+        </section>
+      )}
+
+      <button className="glass-button primary snapshot-complete-cta" onClick={onContinue}>
+        {baselineReady ? 'View Home' : 'Continue'}
+      </button>
+    </div>
+  )
+}
+
 function HomeScreen({
   baselineCtaDisabled,
   baselineReady,
@@ -1045,7 +1149,11 @@ function HomeScreen({
         {scoreClass === 'below' && <p className="quiet-recommendation">Retest in 7 days to confirm.</p>}
       </section>
 
-      {latestCheck && <BetaFeedbackCard snapshotId={latestCheck.id} existingFeedback={existingFeedback} onSubmit={onFeedback} />}
+      {latestCheck && (
+        <section className="home-feedback-section" aria-label="Beta Feedback">
+          <BetaFeedbackCard snapshotId={latestCheck.id} existingFeedback={existingFeedback} onSubmit={onFeedback} />
+        </section>
+      )}
 
       {!baselineReady && (
         <section className="baseline-progress-section" aria-label="Baseline calibration progress">
