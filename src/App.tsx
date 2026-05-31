@@ -41,6 +41,9 @@ type SyncStatus = {
   cloud: boolean
   target: 'profile' | 'snapshot' | 'feedback' | 'auth' | 'guest'
   reason?: string
+  status?: SyncResult['status']
+  errorMessage?: string
+  fallbackUsed?: boolean
   updatedAt: string
 } | null
 
@@ -61,6 +64,9 @@ function syncStatusFor(target: NonNullable<SyncStatus>['target'], result: SyncRe
     target,
     cloud: result.cloud,
     reason: result.reason,
+    status: result.status,
+    errorMessage: result.errorMessage,
+    fallbackUsed: result.fallbackUsed,
     updatedAt: new Date().toISOString(),
   }
 }

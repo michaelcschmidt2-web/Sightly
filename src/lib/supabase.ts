@@ -16,9 +16,18 @@ export const supabase: SupabaseClient | null = supabaseConfigured
   })
   : null
 
+export type FeedbackSyncStatus =
+  | 'cloud_saved'
+  | 'local_fallback_supabase_unconfigured'
+  | 'local_fallback_rls_error'
+  | 'local_fallback_network_error'
+
 export type SyncResult = {
   cloud: boolean
   reason?: string
+  status?: FeedbackSyncStatus
+  errorMessage?: string
+  fallbackUsed?: boolean
 }
 
 export type BetaProfilePayload = {
@@ -43,9 +52,86 @@ export type BetaFeedbackPayload = {
   tags: BetaFeedbackTag[]
 }
 
+type FeedbackDebugPayload = {
+  supabaseConfigured: boolean
+  isAuthenticated: boolean
+  guestIdPresent: boolean
+  fallbackUsed: boolean
+  status: FeedbackSyncStatus
+  errorMessage?: string
+  payloadShape: {
+    user_id: 'present' | null
+    rating: number
+    believable_score: number
+    feedback_text: 'present' | null
+    metadata: {
+      guestId: string | null
+      snapshotId: string
+      tagsCount: number
+    }
+  }
+}
+
 function quietFailure(error: unknown): SyncResult {
-  const message = error instanceof Error ? error.message : 'Supabase unavailable; localStorage fallback used.'
-  return { cloud: false, reason: message }
+  const message = getErrorMessage(error) || 'Supabase unavailable; localStorage fallback used.'
+  return { cloud: false, reason: message, errorMessage: message, fallbackUsed: true }
+}
+
+function getErrorMessage(error: unknown) {
+  if (!error) return undefined
+  if (error instanceof Error) return error.message
+  if (typeof error === 'object' && 'message' in error && typeof error.message === 'string') return error.message
+  return String(error)
+}
+
+function getErrorCode(error: unknown) {
+  if (error && typeof error === 'object' && 'code' in error && typeof error.code === 'string') return error.code
+  return undefined
+}
+
+function classifyFeedbackFailure(error: unknown): FeedbackSyncStatus {
+  const message = getErrorMessage(error)?.toLowerCase() ?? ''
+  const code = getErrorCode(error)
+  if (code === '42501' || message.includes('row-level security') || message.includes('violates row-level security') || message.includes('policy') || message.includes('permission denied')) {
+    return 'local_fallback_rls_error'
+  }
+  return 'local_fallback_network_error'
+}
+
+function recordFeedbackDebug(debug: FeedbackDebugPayload) {
+  try {
+    sessionStorage.setItem('sightly-feedback-sync-debug', JSON.stringify({ ...debug, updatedAt: new Date().toISOString() }))
+  } catch {
+    // Debugging is best-effort and must never block local-first feedback saving.
+  }
+
+  if (debug.fallbackUsed) {
+    console.warn('[Sightly feedback sync]', debug)
+  } else {
+    console.info('[Sightly feedback sync]', debug)
+  }
+}
+
+function makeFeedbackDebug(payload: BetaFeedbackPayload, status: FeedbackSyncStatus, fallbackUsed: boolean, errorMessage?: string): FeedbackDebugPayload {
+  return {
+    supabaseConfigured,
+    isAuthenticated: Boolean(payload.userId),
+    guestIdPresent: Boolean(payload.guestId),
+    fallbackUsed,
+    status,
+    errorMessage,
+    payloadShape: {
+      user_id: payload.userId ? 'present' : null,
+      rating: payload.believabilityRating,
+      believable_score: payload.believabilityRating,
+      feedback_text: payload.comment ? 'present' : null,
+      metadata: {
+        guestId: payload.guestId,
+        snapshotId: payload.snapshotId,
+        tagsCount: payload.tags.length,
+      },
+    },
+  }
 }
 
 export async function getCurrentUserId(): Promise<string | null> {
@@ -56,9 +142,9 @@ export async function getCurrentUserId(): Promise<string | null> {
 }
 
 export async function signInWithEmail(email: string): Promise<SyncResult> {
-  if (!supabase) return { cloud: false, reason: 'Supabase unavailable; localStorage fallback used.' }
+  if (!supabase) return { cloud: false, reason: 'Supabase unavailable; localStorage fallback used.', fallbackUsed: true }
   const normalizedEmail = email.trim()
-  if (!normalizedEmail) return { cloud: false, reason: 'Email missing.' }
+  if (!normalizedEmail) return { cloud: false, reason: 'Email missing.', fallbackUsed: true }
 
   try {
     const { error } = await supabase.auth.signInWithOtp({
@@ -68,14 +154,14 @@ export async function signInWithEmail(email: string): Promise<SyncResult> {
       },
     })
     if (error) return quietFailure(error)
-    return { cloud: true }
+    return { cloud: true, fallbackUsed: false }
   } catch (error) {
     return quietFailure(error)
   }
 }
 
 export async function saveCloudProfile(payload: BetaProfilePayload): Promise<SyncResult> {
-  if (!supabase || !payload.userId) return { cloud: false, reason: 'Supabase unavailable; localStorage fallback used.' }
+  if (!supabase || !payload.userId) return { cloud: false, reason: 'Supabase unavailable; localStorage fallback used.', fallbackUsed: true }
 
   try {
     const { error } = await supabase.from('profiles').upsert({
@@ -86,7 +172,7 @@ export async function saveCloudProfile(payload: BetaProfilePayload): Promise<Syn
       last_eye_exam: payload.lastEyeExam ?? null,
     }, { onConflict: 'user_id' })
     if (error) return quietFailure(error)
-    return { cloud: true }
+    return { cloud: true, fallbackUsed: false }
   } catch (error) {
     return quietFailure(error)
   }
@@ -97,7 +183,7 @@ function scoreForCapability(check: VisionCheck, capability: TestResult['capabili
 }
 
 export async function saveCloudSnapshot(payload: BetaSnapshotPayload): Promise<SyncResult> {
-  if (!supabase || !payload.userId) return { cloud: false, reason: 'Supabase unavailable; localStorage fallback used.' }
+  if (!supabase || !payload.userId) return { cloud: false, reason: 'Supabase unavailable; localStorage fallback used.', fallbackUsed: true }
 
   const { check } = payload
   try {
@@ -121,31 +207,56 @@ export async function saveCloudSnapshot(payload: BetaSnapshotPayload): Promise<S
       created_at: check.date,
     })
     if (error) return quietFailure(error)
-    return { cloud: true }
+    return { cloud: true, fallbackUsed: false }
   } catch (error) {
     return quietFailure(error)
   }
 }
 
 export async function saveCloudFeedback(payload: BetaFeedbackPayload): Promise<SyncResult> {
-  if (!supabase) return { cloud: false, reason: 'Supabase unavailable; localStorage fallback used.' }
+  if (!supabase) {
+    const status: FeedbackSyncStatus = 'local_fallback_supabase_unconfigured'
+    const errorMessage = 'Supabase is not configured in this build. Confirm VITE_SUPABASE_URL and VITE_SUPABASE_PUBLISHABLE_KEY are set and redeployed.'
+    recordFeedbackDebug(makeFeedbackDebug(payload, status, true, errorMessage))
+    return { cloud: false, reason: errorMessage, status, errorMessage, fallbackUsed: true }
+  }
+
+  // Guest feedback RLS contract: user_id is null; rating between 1 and 5; believable_score between 1 and 5; metadata.guestId starts with guest-.
+  const guestFeedbackWithoutValidGuestId = !payload.userId && (!payload.guestId || !payload.guestId.startsWith('guest-'))
+  if (guestFeedbackWithoutValidGuestId) {
+    const status: FeedbackSyncStatus = 'local_fallback_rls_error'
+    const errorMessage = 'Guest feedback requires metadata.guestId starting with guest- for RLS.'
+    recordFeedbackDebug(makeFeedbackDebug(payload, status, true, errorMessage))
+    return { cloud: false, reason: errorMessage, status, errorMessage, fallbackUsed: true }
+  }
+
+  const insertPayload = {
+    user_id: payload.userId,
+    rating: payload.believabilityRating,
+    believable_score: payload.believabilityRating,
+    feedback_text: payload.comment || null,
+    metadata: {
+      guestId: payload.guestId,
+      snapshotId: payload.snapshotId,
+      tags: payload.tags,
+    },
+  }
 
   try {
-    const { error } = await supabase.from('feedback').insert({
-      user_id: payload.userId,
-      rating: payload.believabilityRating,
-      believable_score: payload.believabilityRating,
-      feedback_text: payload.comment || null,
-      metadata: {
-        guestId: payload.guestId,
-        snapshotId: payload.snapshotId,
-        tags: payload.tags,
-        localStorageFallback: true,
-      },
-    })
-    if (error) return quietFailure(error)
-    return { cloud: true }
+    const { error } = await supabase.from('feedback').insert(insertPayload)
+    if (error) {
+      const status = classifyFeedbackFailure(error)
+      const errorMessage = getErrorMessage(error) ?? 'Supabase feedback insert failed.'
+      recordFeedbackDebug(makeFeedbackDebug(payload, status, true, errorMessage))
+      return { cloud: false, reason: errorMessage, status, errorMessage, fallbackUsed: true }
+    }
+    const status: FeedbackSyncStatus = 'cloud_saved'
+    recordFeedbackDebug(makeFeedbackDebug(payload, status, false))
+    return { cloud: true, status, fallbackUsed: false }
   } catch (error) {
-    return quietFailure(error)
+    const status = classifyFeedbackFailure(error)
+    const errorMessage = getErrorMessage(error) ?? 'Supabase feedback insert failed.'
+    recordFeedbackDebug(makeFeedbackDebug(payload, status, true, errorMessage))
+    return { cloud: false, reason: errorMessage, status, errorMessage, fallbackUsed: true }
   }
 }
