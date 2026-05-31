@@ -13,9 +13,11 @@ import {
   saveState,
   visionTools,
 } from './data'
+import { getCurrentUserId, saveCloudFeedback, saveCloudProfile, saveCloudSnapshot, signInWithEmail, type SyncResult } from './lib/supabase'
 
 const SIGHTLY_ACTIVE_SESSION_KEY = 'sightly-active-session-v1'
 const SIGHTLY_ONBOARDING_DRAFT_KEY = 'sightly-onboarding-draft-v1'
+const SIGHTLY_GUEST_ID_KEY = 'sightly-guest-id-v1'
 const CALIBRATION_REQUIRED_SNAPSHOTS = 3
 const CALIBRATION_MIN_INTERVAL_MS = 12 * 60 * 60 * 1000
 type ActiveRunMode = 'monthly-snapshot' | 'standalone-test'
@@ -33,6 +35,34 @@ type OnboardingDraft = {
   introComplete: boolean
   step: number
   profile: OnboardingProfile
+}
+
+type SyncStatus = {
+  cloud: boolean
+  target: 'profile' | 'snapshot' | 'feedback' | 'auth' | 'guest'
+  reason?: string
+  updatedAt: string
+} | null
+
+function getOrCreateGuestId() {
+  try {
+    const existing = localStorage.getItem(SIGHTLY_GUEST_ID_KEY)
+    if (existing) return existing
+    const guestId = `guest-${crypto.randomUUID()}`
+    localStorage.setItem(SIGHTLY_GUEST_ID_KEY, guestId)
+    return guestId
+  } catch {
+    return `guest-${Date.now()}`
+  }
+}
+
+function syncStatusFor(target: NonNullable<SyncStatus>['target'], result: SyncResult): SyncStatus {
+  return {
+    target,
+    cloud: result.cloud,
+    reason: result.reason,
+    updatedAt: new Date().toISOString(),
+  }
 }
 
 function loadActiveSession(): ActiveSession | null {
@@ -123,6 +153,9 @@ function App() {
   const [testStartedAt, setTestStartedAt] = useState(() => Date.now())
   const [snapshotResumed, setSnapshotResumed] = useState(false)
   const [snapshotInterruptions, setSnapshotInterruptions] = useState(0)
+  const [userId, setUserId] = useState<string | null>(null)
+  const [guestId, setGuestId] = useState<string | null>(null)
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(null)
   const introCompleted = state.onboarded || loadOnboardingDraft()?.introComplete === true
 
   useEffect(() => {
@@ -131,8 +164,36 @@ function App() {
   }, [])
 
   useEffect(() => {
+    let cancelled = false
+    void getCurrentUserId().then((id) => {
+      if (!cancelled) setUserId(id)
+    })
+    return () => { cancelled = true }
+  }, [])
+
+  useEffect(() => {
     saveState(state)
   }, [state])
+
+  useEffect(() => {
+    if (!userId || !state.onboarded) return
+    void saveCloudProfile({
+      userId,
+      firstName: state.profile.name.trim(),
+      ageRange: state.profile.ageRange,
+      correctionType: state.profile.correctionProfile,
+      lastEyeExam: state.profile.lastEyeExam,
+    }).then((result) => setSyncStatus(syncStatusFor('profile', result)))
+  }, [state.onboarded, state.profile.ageRange, state.profile.correctionProfile, state.profile.lastEyeExam, state.profile.name, userId])
+
+  useEffect(() => {
+    if (!syncStatus) return
+    try {
+      sessionStorage.setItem('sightly-sync-status', JSON.stringify(syncStatus))
+    } catch {
+      // Lightweight sync status is internal only; localStorage fallback continues either way.
+    }
+  }, [syncStatus])
 
   useEffect(() => {
     if (savedSession && !activeTool && !showSnapshotPrep) return
@@ -201,14 +262,13 @@ function App() {
     }
   }
 
-  function completeOnboarding(profile: {
-    authMode: AuthMode
-    name: string
-    ageRange: string
-    correctionProfile: CorrectionProfile
-    lastEyeExam: LastEyeExamRange
-    usualCorrectionToday: VisionCorrectionUsage
-  }) {
+  function completeOnboarding(profile: OnboardingProfile) {
+    const nextGuestId = profile.authMode === 'guest' ? getOrCreateGuestId() : null
+    if (nextGuestId) {
+      setGuestId(nextGuestId)
+      setSyncStatus(syncStatusFor('guest', { cloud: false, reason: 'Guest beta mode uses local identity with localStorage fallback.' }))
+    }
+
     setState(() => ({
       ...emptyState,
       onboarded: true,
@@ -222,6 +282,18 @@ function App() {
         usualCorrectionToday: profile.usualCorrectionToday,
       },
     }))
+    if (profile.authMode === 'email') {
+      void signInWithEmail(profile.email ?? '').then((result) => setSyncStatus(syncStatusFor('auth', result)))
+    }
+    if (userId) {
+      void saveCloudProfile({
+        userId,
+        firstName: profile.name.trim(),
+        ageRange: profile.ageRange,
+        correctionType: profile.correctionProfile,
+        lastEyeExam: profile.lastEyeExam,
+      }).then((result) => setSyncStatus(syncStatusFor('profile', result)))
+    }
     initializeSnapshot(prepareSnapshotReadiness({
       eyeFatigue: 'normal',
       visionCorrection: profile.usualCorrectionToday,
@@ -310,6 +382,9 @@ function App() {
         interruptionCount: snapshotInterruptions,
       }
       const check = createCheckFromMeasurements(nextMeasurements, date, nextDetails, snapshotReadiness, analytics)
+      if (userId) {
+        void saveCloudSnapshot({ userId, check }).then((result) => setSyncStatus(syncStatusFor('snapshot', result)))
+      }
       const nextCompleted = completedChecks + 1
       const calibrationNotification = nextCompleted <= 3
         ? `Baseline snapshot ${nextCompleted} of 3 saved${nextCompleted === 1 ? '. Snapshot 2 ready in 12 hours.' : nextCompleted === 2 ? '. Final baseline snapshot ready in 12 hours.' : '. Baseline unlocked.'}`
@@ -339,6 +414,16 @@ function App() {
   }
 
   function recordBetaFeedback(snapshotId: string, believabilityRating: 1 | 2 | 3 | 4 | 5, comment: string, tags: BetaFeedbackTag[]) {
+    const feedbackGuestId = userId ? null : (guestId ?? getOrCreateGuestId())
+    if (feedbackGuestId && !guestId) setGuestId(feedbackGuestId)
+    void saveCloudFeedback({
+      userId,
+      guestId: feedbackGuestId,
+      snapshotId,
+      believabilityRating,
+      comment,
+      tags,
+    }).then((result) => setSyncStatus(syncStatusFor('feedback', result)))
     setState((current) => rebuildDerivedState({
       ...current,
       betaFeedback: [
@@ -466,6 +551,7 @@ function App() {
 type OnboardingProfile = {
   authMode: AuthMode
   name: string
+  email?: string
   ageRange: string
   correctionProfile: CorrectionProfile
   lastEyeExam: LastEyeExamRange
@@ -699,6 +785,9 @@ function FirstRunOnboarding({ onComplete }: { onComplete: (profile: OnboardingPr
             <p className="eyebrow">Profile Setup</p>
             <h1>A few details.</h1>
             <label className="soft-field">First name<input autoComplete="given-name" enterKeyHint="next" value={profile.name} onChange={(event) => updateProfile({ name: event.target.value })} onFocus={(event) => event.currentTarget.scrollIntoView({ block: 'center' })} placeholder="First name" /></label>
+            {profile.authMode === 'email' && (
+              <label className="soft-field">Email<input autoComplete="email" enterKeyHint="next" inputMode="email" value={profile.email ?? ''} onChange={(event) => updateProfile({ email: event.target.value })} onFocus={(event) => event.currentTarget.scrollIntoView({ block: 'center' })} placeholder="you@example.com" /></label>
+            )}
             <div className="onboarding-group">
               <p>Age range</p>
               <div className="choice-grid setup-grid compact-setup-grid">
