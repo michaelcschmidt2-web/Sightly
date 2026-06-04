@@ -320,7 +320,13 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
 .onboarding-actions .glass-button { min-height: 56px; }
 .centered { align-self: center; }
 .disclaimer { margin-top: 8px; font-size: 12px; color: rgba(7,24,64,.48); }
-.profile-step h1, .baseline-step h1 { margin-bottom: 4px; }
+.profile-step h1, .baseline-step h1 {
+  margin-bottom: 4px;
+  font-size: clamp(34px, 12vw, 46px);
+  line-height: 1;
+  letter-spacing: -2.3px;
+  overflow-wrap: normal;
+}
 .soft-field { display: grid; gap: 8px; color: rgba(7,24,64,.58); font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
 .soft-field input { width: 100%; border: 1px solid rgba(255,255,255,.86); border-radius: 24px; padding: 17px 18px; background: rgba(255,255,255,.68); color: var(--ink); font-size: 22px; font-weight: 760; outline: none; box-shadow: inset 0 1px 0 #fff, 0 16px 36px rgba(83,105,142,.1); }
 .onboarding-group { display: grid; gap: 10px; }
@@ -410,14 +416,14 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
 .contrast-instructions { background: linear-gradient(145deg, rgba(255,255,255,.82), rgba(236,245,255,.52)); }
 .contrast-track span { background: linear-gradient(90deg, rgba(187,215,249,.72), rgba(93,123,165,.68)); }
 .contrast-stage.glass-card {
-  min-height: 278px;
-  margin: 8px 0 18px;
-  border-radius: 32px;
+  min-height: clamp(190px, 34svh, 238px);
+  margin: 6px 0 12px;
+  border-radius: 30px;
   display: grid;
   align-content: center;
   justify-items: center;
-  gap: 24px;
-  padding: 26px 16px;
+  gap: 14px;
+  padding: 18px 14px;
   position: relative;
   overflow: hidden;
   background: #f7f8fb;
@@ -433,8 +439,8 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
 .landolt-ring.gap-right::after { right: -30px; top: 50%; transform: translateY(-50%); }
 .landolt-ring.gap-bottom::after { left: 50%; bottom: -30px; transform: translateX(-50%); }
 .landolt-ring.gap-left::after { left: -30px; top: 50%; transform: translateY(-50%); }
-.direction-pad { margin-top: 18px; display: grid; grid-template-areas: '. top .' 'left . right' '. bottom .'; grid-template-columns: 1fr 1fr 1fr; gap: 10px; align-items: center; }
-.direction-pad .direction { min-height: 54px; border-radius: 22px; padding: 14px 10px; background: linear-gradient(145deg, rgba(255,255,255,.82), rgba(241,247,255,.58)); }
+.direction-pad { margin-top: 10px; display: grid; grid-template-areas: 'top right bottom left'; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; align-items: center; }
+.direction-pad .direction { min-height: 46px; border-radius: 20px; padding: 10px 6px; background: linear-gradient(145deg, rgba(255,255,255,.82), rgba(241,247,255,.58)); }
 .direction-pad .top { grid-area: top; }
 .direction-pad .right { grid-area: right; }
 .direction-pad .bottom { grid-area: bottom; }
@@ -2681,7 +2687,8 @@ dl {
 
 .letter-row {
   max-width: 100%;
-  letter-spacing: clamp(.16em, 4.5vw, .42em);
+  font-size: clamp(26px, 9vw, 32px) !important;
+  letter-spacing: clamp(.01em, .4vw, .06em);
   transform: none;
 }
 
@@ -3000,6 +3007,506 @@ dl {
   line-height: 1.18;
   padding-inline: 14px;
 }
+
+/* Global UI hardening pass: production mobile layout resilience without redesign. */
+:root {
+  --safe-x: clamp(14px, 4.2vw, 22px);
+  --safe-y: clamp(14px, 3.6svh, 22px);
+  --tap-target: 52px;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 320px;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.app-shell,
+.phone-frame,
+.screen {
+  max-width: 100%;
+}
+
+.screen {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  scroll-padding-block: 24px max(32px, env(safe-area-inset-bottom));
+}
+
+.screen > *,
+.glass-card,
+.glass-button,
+.tool-card,
+.settings-list,
+.settings-list button,
+.metric,
+.profile-item,
+.memory-card,
+.vision-event-row,
+.beta-debug-card,
+.snapshot-complete-card,
+.snapshot-complete-hero,
+.current-vision-panel,
+.prep-section,
+.onboarding-group,
+.soft-field,
+.sharpness-answer {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.glass-card,
+.tool-card,
+.metric,
+.profile-item,
+.memory-card,
+.vision-event-row,
+.beta-debug-card,
+.snapshot-complete-card,
+.snapshot-complete-hero,
+.current-vision-panel,
+.prep-card,
+.prep-confidence,
+.baseline-progress-section,
+.early-results-section,
+.summary-card,
+.vision-profile-card,
+.reliability-card,
+.reliability-baseline,
+.beta-feedback-card {
+  height: auto;
+  overflow: visible;
+}
+
+h1,
+h2,
+p,
+li,
+label,
+legend,
+dt,
+dd,
+span,
+strong,
+small,
+b {
+  max-width: 100%;
+  min-width: 0;
+  line-height: 1.25;
+  word-break: normal;
+  overflow-wrap: anywhere;
+}
+
+h1,
+h2,
+legend {
+  text-wrap: balance;
+}
+
+p,
+li,
+small,
+dd,
+label {
+  text-wrap: pretty;
+}
+
+button,
+button *,
+.glass-button,
+.glass-button *,
+.text-button,
+.text-button *,
+.bottom-nav button,
+.bottom-nav button *,
+.setup-grid button,
+.setup-list button,
+.choice-grid button,
+.direction-pad .direction,
+.peripheral-choice,
+.symbol-choice,
+.beta-rating-row button,
+.beta-feedback-tags button,
+.settings-actions button,
+.settings-list button {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: keep-all;
+  text-overflow: clip;
+}
+
+button,
+.glass-button,
+.text-button,
+.setup-grid button,
+.setup-list button,
+.choice-grid button,
+.direction-pad .direction,
+.peripheral-choice,
+.symbol-choice,
+.beta-rating-row button,
+.beta-feedback-tags button {
+  min-height: max(44px, var(--tap-target));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1.12;
+}
+
+.text-button {
+  min-height: 44px;
+}
+
+input,
+textarea,
+select {
+  min-width: 0;
+  max-width: 100%;
+  font-size: max(16px, 1rem);
+  line-height: 1.3;
+}
+
+img,
+svg,
+canvas {
+  max-width: 100%;
+}
+
+.intro-carousel {
+  min-width: 0;
+  overflow: visible;
+}
+
+.intro-slide-card {
+  min-width: 0;
+  min-height: 100%;
+  height: auto;
+  max-height: none;
+  overflow: visible;
+}
+
+.carousel-screen {
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.intro-slide-card .intro-visual {
+  flex-shrink: 1;
+}
+
+.intro-auth-actions,
+.onboarding-actions,
+.settings-actions,
+.test-actions {
+  min-width: 0;
+  width: 100%;
+}
+
+.setup-next,
+.intro-next,
+.sharpness-start,
+.begin-snapshot,
+.snapshot-complete-cta,
+.reference-check,
+.beta-save-button,
+.optional-calibration-button {
+  width: 100%;
+  max-width: 100%;
+}
+
+.settings-list button,
+.early-result-list div,
+.raw-score-list div,
+.snapshot-result-list div,
+.quiet-contribution-row,
+.next-snapshot-card,
+.reliability-card-head,
+.reliability-baseline,
+.beta-debug-card-head {
+  min-width: 0;
+  flex-wrap: nowrap;
+}
+
+.settings-list button > *,
+.early-result-list div > *,
+.raw-score-list div > *,
+.snapshot-result-list div > *,
+.quiet-contribution-row > *,
+.next-snapshot-card > *,
+.reliability-card-head > *,
+.reliability-baseline > *,
+.beta-debug-card-head > * {
+  min-width: 0;
+}
+
+.settings-list strong,
+.early-result-list b,
+.raw-score-list b,
+.snapshot-result-list b,
+.quiet-contribution-row b,
+.next-snapshot-card strong,
+.reliability-baseline b,
+.beta-debug-card-head strong {
+  flex: 0 1 auto;
+  white-space: normal;
+}
+
+.home-hero-header,
+.section-heading {
+  min-width: 0;
+  gap: 12px;
+}
+
+.home-hero-header > div,
+.section-heading > div {
+  min-width: 0;
+}
+
+.profile-bubble {
+  flex: 0 0 auto;
+}
+
+.choice-grid,
+.setup-grid,
+.setup-list,
+.profile-grid,
+.summary-grid,
+.validation-grid,
+.baseline-metrics-grid,
+.beta-debug-grid,
+.snapshot-summary-grid,
+dl {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.beta-feedback-tags,
+.tool-grid,
+.advanced-tool-grid,
+.reliability-list,
+.beta-debug-list,
+.snapshot-result-list,
+.early-result-list,
+.raw-score-list {
+  min-width: 0;
+}
+
+.tool-card > div:last-child {
+  min-width: 0;
+}
+
+.tool-card h2,
+.tool-card p,
+.tool-card dd,
+.profile-item p,
+.reliability-card li,
+.debug-muted {
+  overflow-wrap: anywhere;
+}
+
+.current-vision-panel strong,
+.reliability-hero strong,
+.visual-response-result strong,
+.snapshot-complete-hero strong {
+  overflow-wrap: normal;
+  word-break: keep-all;
+}
+
+.letter-row {
+  overflow-wrap: normal;
+  word-break: keep-all;
+  white-space: nowrap;
+}
+
+.soft-field input:focus,
+.sharpness-answer input:focus,
+.beta-feedback-field textarea:focus {
+  scroll-margin-block: 120px;
+}
+
+@media (max-width: 430px) {
+  .screen {
+    padding-inline: var(--safe-x);
+  }
+
+  .choice-grid,
+  .choice-grid.generous,
+  .setup-grid,
+  .compact-setup-grid,
+  .compact-setup-list,
+  .profile-grid,
+  .summary-grid,
+  .validation-grid,
+  .baseline-metrics-grid,
+  .snapshot-summary-grid,
+  .beta-debug-grid,
+  dl {
+    gap: 8px;
+  }
+
+  .profile-step h1,
+  .baseline-step h1 {
+    font-size: clamp(34px, 11.8vw, 44px);
+    line-height: 1;
+    letter-spacing: -2.3px;
+    overflow-wrap: normal;
+  }
+
+  .choice-grid button,
+  .setup-grid button,
+  .setup-list button,
+  .beta-feedback-tags button,
+  .direction-pad .direction,
+  .symbol-choice,
+  .peripheral-choice {
+    padding-inline: 8px;
+    font-size: clamp(11.5px, 3.45vw, 13px);
+  }
+
+  .bottom-nav {
+    margin-inline: 10px;
+    padding-inline: 8px;
+  }
+
+  .bottom-nav button {
+    min-width: 0;
+    padding-inline: 4px;
+    font-size: clamp(10.5px, 3.1vw, 12px);
+  }
+
+  .bottom-nav span {
+    font-size: clamp(22px, 7vw, 29px);
+  }
+
+  .peripheral-location-grid {
+    gap: 7px;
+  }
+
+  .beta-rating-row {
+    gap: 6px;
+  }
+}
+
+@media (max-width: 360px) {
+  .screen {
+    padding-inline: 12px;
+  }
+
+  .current-vision-panel {
+    min-height: 232px;
+    padding-inline: 14px;
+  }
+
+  .current-vision-panel strong {
+    font-size: clamp(62px, 22vw, 84px);
+    letter-spacing: -4.6px;
+  }
+
+  .tool-card {
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 10px;
+    padding: 13px;
+  }
+
+  .tool-icon {
+    width: 42px;
+    height: 42px;
+    border-radius: 16px;
+    font-size: 20px;
+  }
+
+  .intro-auth-actions .glass-button,
+  .onboarding-actions .glass-button,
+  .setup-next,
+  .intro-next,
+  .begin-snapshot,
+  .sharpness-start,
+  .snapshot-complete-cta,
+  .reference-check,
+  .beta-save-button {
+    font-size: clamp(12px, 3.65vw, 14px);
+    padding-inline: 12px;
+  }
+
+  .begin-snapshot {
+    padding-inline: 38px;
+  }
+
+  .memory-card-strip,
+  .profile-grid,
+  .summary-grid,
+  .validation-grid,
+  .baseline-metrics-grid,
+  .snapshot-summary-grid,
+  .beta-debug-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-height: 720px) {
+  .screen {
+    padding-block: max(12px, env(safe-area-inset-top)) max(18px, env(safe-area-inset-bottom));
+  }
+
+  .liquid-home {
+    gap: 16px;
+  }
+
+  .intro-slide-card {
+    padding-block: 12px;
+  }
+
+  .intro-slide-card .intro-visual {
+    min-height: clamp(64px, 18svh, 140px);
+    margin-bottom: 6px;
+  }
+
+  .intro-slide-baseline .intro-visual {
+    min-height: clamp(116px, 24svh, 190px);
+  }
+
+  .intro-slide-card h1 {
+    font-size: clamp(22px, 7.4vw, 34px);
+    line-height: 1;
+  }
+
+  .intro-body-copy p {
+    font-size: clamp(10px, 3.2vw, 12px);
+    line-height: 1.22;
+  }
+
+  .glass-button,
+  .choice-grid button,
+  .setup-list button,
+  .direction-pad .direction,
+  .symbol-choice,
+  .peripheral-choice {
+    min-height: 46px;
+  }
+
+  .test-stage,
+  .sharpness-row-stage,
+  .contrast-stage.glass-card,
+  .visual-response-stage,
+  .peripheral-stage {
+    min-height: clamp(180px, 34svh, 240px);
+  }
+
+  .snapshot-complete-hero,
+  .visual-response-result,
+  .reliability-hero {
+    min-height: 190px;
+  }
+}
+
+@media (min-width: 431px) and (max-width: 768px) {
+  .phone-frame {
+    width: min(430px, 100vw);
+  }
+}
 @media (max-width: 380px), (max-height: 700px) {
   .post-snapshot-results-screen {
     gap: 13px;
@@ -3023,4 +3530,200 @@ dl {
   .beta-rating-row {
     gap: 7px;
   }
+}
+
+/* Confirmed bug fix: keep active contrast controls reachable on short iPhone-height screens. */
+.contrast-screen .contrast-stage.glass-card {
+  min-height: clamp(150px, 26svh, 190px);
+  margin: 4px 0 8px;
+  gap: 8px;
+  padding: 14px 12px;
+}
+
+.contrast-screen .landolt-ring {
+  width: clamp(78px, 24vw, 96px);
+  height: clamp(78px, 24vw, 96px);
+  border-width: clamp(13px, 4vw, 16px);
+}
+
+.contrast-screen h2 {
+  margin: 0;
+  font-size: clamp(18px, 5.8vw, 22px);
+  line-height: 1.05;
+}
+
+.contrast-screen h2 + p {
+  font-size: clamp(12px, 3.6vw, 14px);
+  line-height: 1.25;
+}
+
+.contrast-screen .direction-pad {
+  margin-top: 8px;
+}
+
+.contrast-screen .not-visible-button {
+  margin-top: 6px;
+  min-height: 46px;
+}
+
+/* Confirmed bug fix: keep all peripheral answer controls reachable on short iPhone-height screens. */
+.peripheral-screen .peripheral-stage {
+  min-height: clamp(108px, 20svh, 132px);
+  margin: 2px 0 6px;
+  border-radius: 26px;
+}
+
+.peripheral-screen .peripheral-field {
+  inset: 12px;
+  border-radius: 22px;
+}
+
+.peripheral-screen h2 {
+  margin: 0;
+  font-size: clamp(17px, 5.4vw, 20px);
+  line-height: 1.03;
+}
+
+.peripheral-screen h2 + p {
+  font-size: clamp(11px, 3.3vw, 13px);
+  line-height: 1.18;
+}
+
+.peripheral-screen .peripheral-location-grid {
+  grid-template-areas: 'upper-left top upper-right' 'left . right' 'lower-left bottom lower-right';
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin: 7px 0 5px;
+}
+
+.peripheral-screen .peripheral-location-grid::before {
+  display: none;
+}
+
+.peripheral-screen .peripheral-location-grid .glass-button {
+  min-height: 36px;
+  border-radius: 15px;
+  padding-inline: 4px;
+}
+
+.peripheral-screen .peripheral-choice {
+  font-size: clamp(9.5px, 2.75vw, 11px);
+}
+
+/* Confirmed bug fix: post-snapshot hero/results must not clip or stack oversized text on mobile. */
+.post-snapshot-results-screen {
+  gap: 10px;
+}
+
+.post-snapshot-results-screen .snapshot-complete-hero {
+  min-height: auto;
+  padding: 16px 14px;
+  border-radius: 28px;
+  gap: 6px;
+  align-content: start;
+}
+
+.post-snapshot-results-screen .snapshot-complete-hero h1 {
+  font-size: clamp(26px, 8vw, 34px);
+  line-height: 1.02;
+  letter-spacing: -1.5px;
+  overflow-wrap: normal;
+}
+
+.post-snapshot-results-screen .snapshot-complete-hero strong {
+  font-size: clamp(20px, 6vw, 28px);
+  line-height: 1.05;
+  letter-spacing: -.7px;
+  overflow-wrap: normal;
+}
+
+.post-snapshot-results-screen .snapshot-complete-hero p:not(.section-kicker) {
+  font-size: clamp(12px, 3.4vw, 14px);
+  line-height: 1.24;
+}
+
+.post-snapshot-results-screen .snapshot-complete-card {
+  padding: 14px;
+  border-radius: 24px;
+  gap: 10px;
+}
+
+.post-snapshot-results-screen .snapshot-complete-card h2 {
+  font-size: clamp(18px, 5.4vw, 21px);
+}
+
+.post-snapshot-results-screen .snapshot-result-list div,
+.post-snapshot-results-screen .early-result-list div {
+  padding: 9px 0;
+  gap: 10px;
+}
+
+/* Confirmed bug fix: pre-baseline home panel must not dominate/clip on mobile. */
+.liquid-home {
+  gap: 12px;
+}
+
+.current-vision-panel {
+  min-height: auto;
+  padding: 18px 16px;
+  border-radius: 28px;
+}
+
+.current-vision-panel strong {
+  font-size: clamp(46px, 15vw, 64px);
+  line-height: .98;
+  letter-spacing: -3px;
+}
+
+.current-vision-panel h2 {
+  font-size: clamp(18px, 5.5vw, 22px);
+  line-height: 1.08;
+}
+
+.current-vision-range {
+  font-size: clamp(12px, 3.5vw, 14px);
+  line-height: 1.24;
+}
+
+/* Confirmed bug fix: Explore tool cards must keep result metadata inside card bounds. */
+.tool-card {
+  grid-template-columns: 1fr;
+  gap: 8px;
+  padding: 14px;
+}
+
+.tool-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+}
+
+.tool-card h2 {
+  font-size: clamp(19px, 5.8vw, 23px);
+  line-height: 1.08;
+  overflow-wrap: normal;
+}
+
+.tool-card p {
+  font-size: clamp(12px, 3.5vw, 14px);
+  line-height: 1.25;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.tool-card dl {
+  grid-template-columns: 1fr;
+  gap: 3px;
+}
+
+.tool-card dt,
+.tool-card dd {
+  min-width: 0;
+  max-width: 100%;
+  line-height: 1.12;
+}
+
+.tool-card dd {
+  text-align: left;
+  overflow-wrap: anywhere;
 }

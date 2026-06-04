@@ -16,7 +16,7 @@ test('first-run onboarding is a premium three-card carousel before setup details
   assert.match(app, /onTouchEnd/)
   assert.match(app, /setIntroComplete\(true\)/)
   assert.match(app, /setStep\(1\)/)
-  assert.match(app, /if \(!introComplete\)/)
+  assert.match(app, /if \(!introComplete \|\| effectiveAuthStage === 'intro'\)/)
 })
 
 test('intro copy explains purpose, baseline, and journey without adding setup text or exam language', () => {
@@ -63,13 +63,29 @@ test('visual sharpness starts on the first target with compact inline instructio
   assert.doesNotMatch(sharpness, /Before you start|Begin sharpness check/)
 })
 
-test('third slide carries account actions as large native-feeling buttons', () => {
+test('third slide carries explicit email and guest account actions as large native-feeling buttons', () => {
   assert.match(app, /const authActions/)
-  assert.match(app, /Continue with Apple/)
-  assert.match(app, /Continue with Google/)
   assert.match(app, /Continue with Email/)
   assert.match(app, /Continue as Guest/)
+  assert.doesNotMatch(app, /Continue with Apple/)
+  assert.doesNotMatch(app, /Continue with Google/)
   assert.match(app, /intro-auth-actions/)
+})
+
+test('email auth path is explicit and does not silently continue as guest', () => {
+  const onboarding = app.slice(app.indexOf('function FirstRunOnboarding'), app.indexOf('const readinessChecklist'))
+  assert.match(onboarding, /authStage/)
+  assert.match(onboarding, /Create your Sightly account/)
+  assert.match(onboarding, /Use your email to save snapshots and feedback across devices\./)
+  assert.match(onboarding, /Email address/)
+  assert.match(onboarding, /Send Sign-In Link/)
+  assert.match(onboarding, /Check your email/)
+  assert.match(onboarding, /We sent a sign-in link to/)
+  assert.match(onboarding, /Email sign-in is unavailable right now\. You can continue as guest\./)
+  assert.match(onboarding, /beginGuestOnboarding/)
+  assert.match(onboarding, /sendEmailLink/)
+  assert.match(onboarding, /signInWithEmail/)
+  assert.doesNotMatch(onboarding.slice(onboarding.indexOf('async function sendEmailLink'), onboarding.indexOf('function completeSetup')), /getOrCreateGuestId/)
 })
 
 test('carousel includes liquid-glass visuals, paging, safe-area layout, and compact phone guards', () => {

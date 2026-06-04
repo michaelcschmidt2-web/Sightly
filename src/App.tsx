@@ -13,7 +13,7 @@ import {
   saveState,
   visionTools,
 } from './data'
-import { getCurrentUserId, saveCloudFeedback, saveCloudProfile, saveCloudSnapshot, signInWithEmail, type SyncResult } from './lib/supabase'
+import { getCurrentUserId, saveCloudFeedback, saveCloudProfile, saveCloudSnapshot, signInWithEmail, subscribeToAuthChanges, type SyncResult } from './lib/supabase'
 
 const SIGHTLY_ACTIVE_SESSION_KEY = 'sightly-active-session-v1'
 const SIGHTLY_ONBOARDING_DRAFT_KEY = 'sightly-onboarding-draft-v1'
@@ -163,6 +163,8 @@ function App() {
   const [userId, setUserId] = useState<string | null>(null)
   const [guestId, setGuestId] = useState<string | null>(null)
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(null)
+  const syncedSnapshotIdsRef = useRef(new Set<string>())
+  const syncedFeedbackIdsRef = useRef(new Set<string>())
   const introCompleted = state.onboarded || loadOnboardingDraft()?.introComplete === true
 
   useEffect(() => {
@@ -175,7 +177,16 @@ function App() {
     void getCurrentUserId().then((id) => {
       if (!cancelled) setUserId(id)
     })
-    return () => { cancelled = true }
+    const unsubscribe = subscribeToAuthChanges((id) => {
+      if (!cancelled) {
+        setUserId(id)
+        if (id) setGuestId(null)
+      }
+    })
+    return () => {
+      cancelled = true
+      unsubscribe()
+    }
   }, [])
 
   useEffect(() => {
@@ -192,6 +203,28 @@ function App() {
       lastEyeExam: state.profile.lastEyeExam,
     }).then((result) => setSyncStatus(syncStatusFor('profile', result)))
   }, [state.onboarded, state.profile.ageRange, state.profile.correctionProfile, state.profile.lastEyeExam, state.profile.name, userId])
+
+  useEffect(() => {
+    if (!userId || !state.onboarded) return
+    state.checks.forEach((check) => {
+      if (syncedSnapshotIdsRef.current.has(check.id)) return
+      syncedSnapshotIdsRef.current.add(check.id)
+      void saveCloudSnapshot({ userId, check }).then((result) => setSyncStatus(syncStatusFor('snapshot', result)))
+    })
+    state.betaFeedback.forEach((feedback) => {
+      const feedbackKey = `${feedback.snapshotId}-${feedback.createdAt}`
+      if (syncedFeedbackIdsRef.current.has(feedbackKey)) return
+      syncedFeedbackIdsRef.current.add(feedbackKey)
+      void saveCloudFeedback({
+        userId,
+        guestId: null,
+        snapshotId: feedback.snapshotId,
+        believabilityRating: feedback.believabilityRating,
+        comment: feedback.comment,
+        tags: feedback.tags,
+      }).then((result) => setSyncStatus(syncStatusFor('feedback', result)))
+    })
+  }, [state.betaFeedback, state.checks, state.onboarded, userId])
 
   useEffect(() => {
     if (!syncStatus) return
@@ -289,9 +322,6 @@ function App() {
         usualCorrectionToday: profile.usualCorrectionToday,
       },
     }))
-    if (profile.authMode === 'email') {
-      void signInWithEmail(profile.email ?? '').then((result) => setSyncStatus(syncStatusFor('auth', result)))
-    }
     if (userId) {
       void saveCloudProfile({
         userId,
@@ -390,6 +420,7 @@ function App() {
       }
       const check = createCheckFromMeasurements(nextMeasurements, date, nextDetails, snapshotReadiness, analytics)
       if (userId) {
+        syncedSnapshotIdsRef.current.add(check.id)
         void saveCloudSnapshot({ userId, check }).then((result) => setSyncStatus(syncStatusFor('snapshot', result)))
       }
       const nextCompleted = completedChecks + 1
@@ -423,7 +454,9 @@ function App() {
 
   function recordBetaFeedback(snapshotId: string, believabilityRating: 1 | 2 | 3 | 4 | 5, comment: string, tags: BetaFeedbackTag[]) {
     const feedbackGuestId = userId ? null : (guestId ?? getOrCreateGuestId())
+    const createdAt = new Date().toISOString()
     if (feedbackGuestId && !guestId) setGuestId(feedbackGuestId)
+    if (userId) syncedFeedbackIdsRef.current.add(`${snapshotId}-${createdAt}`)
     void saveCloudFeedback({
       userId,
       guestId: feedbackGuestId,
@@ -436,7 +469,7 @@ function App() {
       ...current,
       betaFeedback: [
         ...current.betaFeedback.filter((item) => item.snapshotId !== snapshotId),
-        { snapshotId, createdAt: new Date().toISOString(), believabilityRating, comment, tags },
+        { snapshotId, createdAt, believabilityRating, comment, tags },
       ],
     }))
   }
@@ -488,7 +521,7 @@ function App() {
   }
 
   if (!introCompleted || !state.onboarded) {
-    return <FirstRunOnboarding onComplete={completeOnboarding} />
+    return <FirstRunOnboarding currentUserId={userId} onComplete={completeOnboarding} />
   }
 
   if (savedSession && !activeTool && !showSnapshotPrep) {
@@ -638,9 +671,7 @@ const introSlides = [
 ]
 
 const authActions: Array<{ mode: AuthMode; label: string; primary?: boolean }> = [
-  { mode: 'apple', label: 'Continue with Apple', primary: true },
-  { mode: 'google', label: 'Continue with Google' },
-  { mode: 'email', label: 'Continue with Email' },
+  { mode: 'email', label: 'Continue with Email', primary: true },
   { mode: 'guest', label: 'Continue as Guest' },
 ]
 
@@ -759,7 +790,7 @@ function SightlyIntroExperience({ onBeginSetup }: { onBeginSetup: (authMode: Aut
   )
 }
 
-function FirstRunOnboarding({ onComplete }: { onComplete: (profile: OnboardingProfile) => void }) {
+function FirstRunOnboarding({ currentUserId, onComplete }: { currentUserId: string | null; onComplete: (profile: OnboardingProfile) => void }) {
   const draft = loadOnboardingDraft()
   const [introComplete, setIntroComplete] = useState(() => draft?.introComplete ?? false)
   const [step, setStep] = useState(() => Math.min(Math.max(draft?.step ?? 1, 1), 2))
@@ -771,23 +802,54 @@ function FirstRunOnboarding({ onComplete }: { onComplete: (profile: OnboardingPr
     lastEyeExam: 'unknown',
     usualCorrectionToday: 'glasses',
   })
+  const [authStage, setAuthStage] = useState<'intro' | 'emailForm' | 'emailSent' | 'emailUnavailable' | 'profile'>(() => {
+    if (!draft?.introComplete) return 'intro'
+    if (draft.profile.authMode === 'email' && !currentUserId) return 'emailForm'
+    return 'profile'
+  })
+  const [authEmail, setAuthEmail] = useState(() => draft?.profile.email ?? '')
 
   useEffect(() => {
     saveOnboardingDraft({ introComplete, step, profile })
   }, [introComplete, step, profile])
 
+  const effectiveAuthStage = currentUserId && profile.authMode === 'email' ? 'profile' : authStage
+
   const updateProfile = (patch: Partial<OnboardingProfile>) => setProfile((current) => ({ ...current, ...patch }))
   const next = () => setStep((current) => Math.min(current + 1, 2))
+  const beginGuestOnboarding = () => {
+    getOrCreateGuestId()
+    updateProfile({ authMode: 'guest' })
+    setAuthStage('profile')
+    setStep(1)
+    setIntroComplete(true)
+  }
+  const beginEmailOnboarding = () => {
+    updateProfile({ authMode: 'email' })
+    setAuthStage('emailForm')
+    setStep(1)
+    setIntroComplete(true)
+  }
+  async function sendEmailLink() {
+    const email = authEmail.trim()
+    updateProfile({ authMode: 'email', email })
+    const result = await signInWithEmail(email)
+    if (result.cloud) setAuthStage('emailSent')
+    else setAuthStage('emailUnavailable')
+  }
   const completeSetup = () => {
+    if (profile.authMode === 'email' && !currentUserId) {
+      setAuthStage('emailForm')
+      return
+    }
     saveOnboardingDraft(null)
-    onComplete(profile)
+    onComplete(profile.authMode === 'email' ? { ...profile, authMode: 'email' } : { ...profile, authMode: 'guest' })
   }
 
-  if (!introComplete) {
+  if (!introComplete || effectiveAuthStage === 'intro') {
     return <SightlyIntroExperience onBeginSetup={(authMode) => {
-      updateProfile({ authMode })
-      setStep(1)
-      setIntroComplete(true)
+      if (authMode === 'guest') beginGuestOnboarding()
+      else beginEmailOnboarding()
     }} />
   }
 
@@ -796,14 +858,40 @@ function FirstRunOnboarding({ onComplete }: { onComplete: (profile: OnboardingPr
       <div className="ambient ambient-a" />
       <div className="ambient ambient-b" />
       <section className="phone-frame onboarding-frame">
-        {step === 1 && (
+        {effectiveAuthStage === 'emailForm' && (
+          <div className="screen onboarding-screen profile-step consolidated-profile-step">
+            <p className="eyebrow">Account</p>
+            <h1>Create your Sightly account</h1>
+            <p className="onboarding-subtitle">Use your email to save snapshots and feedback across devices.</p>
+            <label className="soft-field">Email address<input autoComplete="email" enterKeyHint="send" inputMode="email" value={authEmail} onChange={(event) => setAuthEmail(event.target.value)} onFocus={(event) => event.currentTarget.scrollIntoView({ block: 'center' })} placeholder="you@example.com" type="email" /></label>
+            <button className="glass-button primary setup-next" disabled={!authEmail.trim()} onClick={sendEmailLink}>Send Sign-In Link</button>
+            <button className="glass-button quiet setup-next" onClick={beginGuestOnboarding}>Continue as Guest</button>
+          </div>
+        )}
+
+        {effectiveAuthStage === 'emailSent' && (
+          <div className="screen onboarding-screen baseline-step consolidated-baseline-step">
+            <p className="eyebrow">Email Sent</p>
+            <h1>Check your email</h1>
+            <p className="onboarding-subtitle">We sent a sign-in link to {authEmail.trim()}.</p>
+            <p className="disclaimer">Open the link on this device to continue setup and start your baseline.</p>
+          </div>
+        )}
+
+        {effectiveAuthStage === 'emailUnavailable' && (
+          <div className="screen onboarding-screen baseline-step consolidated-baseline-step">
+            <p className="eyebrow">Email Sign-In</p>
+            <h1>Try guest mode for now.</h1>
+            <p className="onboarding-subtitle">Email sign-in is unavailable right now. You can continue as guest.</p>
+            <button className="glass-button primary setup-next" onClick={beginGuestOnboarding}>Continue as Guest</button>
+          </div>
+        )}
+
+        {effectiveAuthStage === 'profile' && step === 1 && (
           <div className="screen onboarding-screen profile-step consolidated-profile-step">
             <p className="eyebrow">Profile Setup</p>
             <h1>A few details.</h1>
             <label className="soft-field">First name<input autoComplete="given-name" enterKeyHint="next" value={profile.name} onChange={(event) => updateProfile({ name: event.target.value })} onFocus={(event) => event.currentTarget.scrollIntoView({ block: 'center' })} placeholder="First name" /></label>
-            {profile.authMode === 'email' && (
-              <label className="soft-field">Email<input autoComplete="email" enterKeyHint="next" inputMode="email" value={profile.email ?? ''} onChange={(event) => updateProfile({ email: event.target.value })} onFocus={(event) => event.currentTarget.scrollIntoView({ block: 'center' })} placeholder="you@example.com" /></label>
-            )}
             <div className="onboarding-group">
               <p>Age range</p>
               <div className="choice-grid setup-grid compact-setup-grid">
@@ -832,7 +920,7 @@ function FirstRunOnboarding({ onComplete }: { onComplete: (profile: OnboardingPr
           </div>
         )}
 
-        {step === 2 && (
+        {effectiveAuthStage === 'profile' && step === 2 && (
           <div className="screen onboarding-screen baseline-step consolidated-baseline-step">
             <p className="eyebrow">Build Your Baseline</p>
             <h1>Start with Snapshot 1.</h1>

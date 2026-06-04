@@ -17,7 +17,7 @@ test('full first-user flow persists intro completion and setup draft before onbo
 
 test('fresh and seeded states cannot skip the intro carousel before intro completion', () => {
   assert.match(app, /const introCompleted = state\.onboarded \|\| loadOnboardingDraft\(\)\?\.introComplete === true/)
-  assert.match(app, /if \(!introCompleted \|\| !state\.onboarded\) \{\s*return <FirstRunOnboarding onComplete=\{completeOnboarding\} \/>/)
+  assert.match(app, /if \(!introCompleted \|\| !state\.onboarded\) \{\s*return <FirstRunOnboarding currentUserId=\{userId\} onComplete=\{completeOnboarding\} \/>/)
   assert.doesNotMatch(app, /if \(!state\.onboarded\) \{\s*return <FirstRunOnboarding/)
 })
 
