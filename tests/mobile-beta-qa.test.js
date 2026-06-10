@@ -27,6 +27,25 @@ test('sharpness input is configured for mobile keyboards without zoom or autocor
   assert.match(css, /\.sharpness-answer input[\s\S]*font-size:\s*max\(18px, 26px\)/)
 })
 
+test('sharpness letter row uses per-row inline font size without mobile clamp override', () => {
+  assert.match(app, /const sharpnessFontSizes = \[36, 30, 24, 20, 16, 14, 12, 10, 9, 8, 7, 6, 5, 4\]/)
+  assert.match(app, /style=\{\{ fontSize: `\$\{fontSize\}px` \}\}/)
+  assert.match(app, /data-intended-font-size=\{`\$\{fontSize\}px`\}/)
+  assert.match(app, /getComputedStyle\(target\)\.fontSize/)
+  assert.match(app, /Debug · row \{rowIndex \+ 1\} · intended \{fontSize\}px · computed \{debugFontSize\}/)
+  const letterRowBlocks = css.match(/\.letter-row\s*\{[\s\S]*?\}/g) ?? []
+  assert.ok(letterRowBlocks.length > 0)
+  for (const block of letterRowBlocks) {
+    assert.doesNotMatch(block, /font-size\s*:/)
+    assert.doesNotMatch(block, /clamp\(/)
+    assert.doesNotMatch(block, /!important/)
+    assert.doesNotMatch(block, /scale\(/)
+  }
+  assert.match(css, /\.letter-row\s*\{[\s\S]*font-optical-sizing:\s*none/)
+  assert.match(css, /\.letter-row\s*\{[\s\S]*font-size-adjust:\s*none/)
+  assert.match(css, /\.letter-row\s*\{[\s\S]*block-size:\s*1em/)
+})
+
 test('contrast test uses a flat high-readability field and no cramped directional pad on mobile', () => {
   assert.match(css, /\.contrast-screen[\s\S]*background:\s*#f7f8fb/)
   assert.match(css, /\.landolt-ring[\s\S]*width:\s*clamp\(96px, 30vw, 118px\)/)

@@ -109,6 +109,8 @@ export type PeripheralTrial = {
   difficulty: number
   correct: boolean
   responseTimeMs: number
+  replayed?: boolean
+  replayCount?: number
 }
 
 export type PeripheralAwarenessPayload = {
@@ -129,6 +131,7 @@ export type PeripheralAwarenessPayload = {
   timestamp: string
   edgeAccuracy: number
   consistency: number
+  replayedTrials?: number
   trials: PeripheralTrial[]
 }
 

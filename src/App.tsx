@@ -252,7 +252,7 @@ function App() {
     : null
   const calibrationWaitMs = nextCalibrationSnapshotAt ? Math.max(0, nextCalibrationSnapshotAt.getTime() - now) : 0
   const baselineCtaDisabled = calibrationInProgress && completedChecks > 0 && calibrationWaitMs > 0
-  const nextSnapshotLabel = baselineCtaDisabled ? formatDuration(calibrationWaitMs) : 'Ready now'
+  const nextSnapshotLabel = baselineCtaDisabled ? formatDuration(calibrationWaitMs) : 'Snapshot available'
   const typicalRangeLabel = state.typicalRange
     ? `${state.typicalRange.low}–${state.typicalRange.high}`
     : 'After 3 snapshots'
@@ -547,8 +547,11 @@ function App() {
           <SnapshotCompleteScreen
             baselineReady={baselineReady}
             check={pendingCompletedSnapshot.check}
+            existingFeedback={state.betaFeedback.find((item) => item.snapshotId === pendingCompletedSnapshot.check.id)}
             onContinue={() => { setPendingCompletedSnapshot(null); setTab('home') }}
+            onFeedback={recordBetaFeedback}
             snapshotNumber={pendingCompletedSnapshot.snapshotNumber}
+            syncStatus={syncStatus}
             typicalRangeLabel={typicalRangeLabel}
           />
         ) : (
@@ -587,7 +590,7 @@ function App() {
               />
             )}
             {tab === 'reliability' && <ReliabilityDashboard state={state} onBack={() => setTab('settings')} />}
-            {tab === 'betaDiagnostics' && <BetaDiagnosticsScreen state={state} onBack={() => setTab('settings')} />}
+            {tab === 'betaDiagnostics' && <BetaDiagnosticsScreen state={state} syncStatus={syncStatus} onBack={() => setTab('settings')} />}
             <BottomNav tab={tab === 'betaDiagnostics' ? 'settings' : tab} setTab={setTab} />
           </>
         )}
@@ -859,7 +862,7 @@ function FirstRunOnboarding({ currentUserId, onComplete }: { currentUserId: stri
       <div className="ambient ambient-b" />
       <section className="phone-frame onboarding-frame">
         {effectiveAuthStage === 'emailForm' && (
-          <div className="screen onboarding-screen profile-step consolidated-profile-step">
+          <div className="screen onboarding-screen profile-step consolidated-profile-step auth-email-step">
             <p className="eyebrow">Account</p>
             <h1>Create your Sightly account</h1>
             <p className="onboarding-subtitle">Use your email to save snapshots and feedback across devices.</p>
@@ -925,11 +928,11 @@ function FirstRunOnboarding({ currentUserId, onComplete }: { currentUserId: stri
             <p className="eyebrow">Build Your Baseline</p>
             <h1>Start with Snapshot 1.</h1>
             <p className="onboarding-subtitle">Three snapshots help Sightly learn what is normal for you.</p>
-            <div className="baseline-pill glass-card"><span>Snapshot 1 of 3</span><strong>Ready now</strong></div>
+            <div className="baseline-pill baseline-status glass-card" aria-label="Snapshot 1 of 3 is ready to begin"><span>Snapshot 1 of 3</span><strong>Snapshot Ready</strong><small>Preparation checklist complete</small></div>
             <div className="readiness-list onboarding-readiness">
               {readinessChecklist.map((item) => <div key={item}><span>✓</span>{item}</div>)}
             </div>
-            <button className="glass-button primary setup-next" onClick={completeSetup}>Start First Snapshot</button>
+            <button className="glass-button primary setup-next" onClick={completeSetup}>Start Snapshot 1</button>
             <p className="disclaimer">Your Vision Score unlocks after 3 snapshots.</p>
           </div>
         )}
@@ -1070,14 +1073,20 @@ function SnapshotReadinessScreen({
 function SnapshotCompleteScreen({
   baselineReady,
   check,
+  existingFeedback,
   onContinue,
+  onFeedback,
   snapshotNumber,
+  syncStatus,
   typicalRangeLabel,
 }: {
   baselineReady: boolean
   check: SightlyState['checks'][number]
+  existingFeedback?: SightlyState['betaFeedback'][number]
   onContinue: () => void
+  onFeedback: (snapshotId: string, believabilityRating: 1 | 2 | 3 | 4 | 5, comment: string, tags: BetaFeedbackTag[]) => void
   snapshotNumber: number
+  syncStatus: SyncStatus
   typicalRangeLabel: string
 }) {
   const visibleResults = check.testResults.filter((result) => result.capability !== 'visualResponse')
@@ -1154,8 +1163,16 @@ function SnapshotCompleteScreen({
         </section>
       )}
 
+      <BetaFeedbackCard
+        context="post-snapshot"
+        existingFeedback={existingFeedback}
+        snapshotId={check.id}
+        syncStatus={syncStatus?.target === 'feedback' ? syncStatus : null}
+        onSubmit={onFeedback}
+      />
+
       <button className="glass-button primary snapshot-complete-cta" onClick={onContinue}>
-        {baselineReady ? 'View Home' : 'Continue'}
+        {baselineReady ? 'View Home' : 'Continue to Home'}
       </button>
     </div>
   )
@@ -1208,6 +1225,24 @@ function HomeScreen({
   const storyTitle = scoreClass === 'below' ? 'Vision Insight' : 'Vision Story'
   const [showBaselineInfo, setShowBaselineInfo] = useState(false)
   const primaryChange = latestCheck?.explanation?.contributions.find((item) => item.points !== 0)
+  const nextSnapshotNumber = Math.min(completedChecks + 1, CALIBRATION_REQUIRED_SNAPSHOTS)
+  const nextActionTitle = baselineReady
+    ? (calibration.optionalFourthSnapshotRecommended ? 'Optional calibration available' : 'Snapshot available')
+    : baselineCtaDisabled
+      ? `Snapshot ${nextSnapshotNumber} unlocks in ${nextSnapshotLabel}`
+      : `Snapshot ${nextSnapshotNumber} available`
+  const nextActionDetail = baselineReady
+    ? (calibration.optionalFourthSnapshotRecommended ? 'A fourth snapshot can improve calibration consistency.' : 'Take a check-in when you are ready to compare with your baseline.')
+    : baselineCtaDisabled
+      ? 'Baseline snapshots happen in separate sessions so Sightly can learn your normal range more reliably.'
+      : completedChecks === 0
+        ? 'Start Snapshot 1 now. Two later snapshots unlock after separate sessions.'
+        : `Continue baseline with Snapshot ${nextSnapshotNumber}. Later snapshots unlock after separate sessions.`
+  const nextActionCta = baselineReady
+    ? (calibration.optionalFourthSnapshotRecommended ? 'Add Calibration Snapshot' : 'Start Check-In')
+    : baselineCtaDisabled
+      ? `Available in ${nextSnapshotLabel}`
+      : `Start Snapshot ${nextSnapshotNumber}`
 
   return (
     <div className="screen home-screen liquid-home">
@@ -1243,9 +1278,18 @@ function HomeScreen({
         {scoreClass === 'below' && <p className="quiet-recommendation">Retest in 7 days to confirm.</p>}
       </section>
 
+      <section className={`home-next-action-card glass-card ${baselineCtaDisabled ? 'waiting' : 'available'}`} aria-label="Next action">
+        <div>
+          <p className="section-kicker">Next Action</p>
+          <h2>{nextActionTitle}</h2>
+          <p>{nextActionDetail}</p>
+        </div>
+        <button className="glass-button primary home-next-action-button" disabled={baselineCtaDisabled} onClick={startCheck}>{nextActionCta}</button>
+      </section>
+
       {latestCheck && (
         <section className="home-feedback-section" aria-label="Beta Feedback">
-          <BetaFeedbackCard snapshotId={latestCheck.id} existingFeedback={existingFeedback} onSubmit={onFeedback} />
+          <BetaFeedbackCard context="home" snapshotId={latestCheck.id} existingFeedback={existingFeedback} onSubmit={onFeedback} />
         </section>
       )}
 
@@ -1254,11 +1298,11 @@ function HomeScreen({
           <div>
             <p className="section-kicker">Baseline Progress</p>
             <h2>{Math.min(completedChecks, CALIBRATION_REQUIRED_SNAPSHOTS)} of 3 snapshots complete</h2>
-            <p>Next: {completedChecks === 0 ? 'Complete Snapshot 1 when ready' : completedChecks === 1 ? 'Complete Snapshot 2 when available' : 'Complete Snapshot 3 when available'}</p>
+            <p>3 snapshots build your personal baseline. They happen in separate sessions so one moment does not define your normal range.</p>
           </div>
           <div className="next-snapshot-card glass-card">
-            <span>Next:</span>
-            <strong>{baselineCtaDisabled ? nextSnapshotLabel : completedChecks === 0 ? 'Complete Snapshot 1' : completedChecks === 1 ? 'Complete Snapshot 2' : 'Complete Snapshot 3'}</strong>
+            <span>{baselineCtaDisabled ? 'Unlocks in' : 'Available now'}</span>
+            <strong>{baselineCtaDisabled ? nextSnapshotLabel : `Snapshot ${nextSnapshotNumber}`}</strong>
           </div>
         </section>
       )}
@@ -1359,18 +1403,34 @@ function HomeScreen({
 }
 
 function BetaFeedbackCard({
+  context = 'home',
   snapshotId,
   existingFeedback,
+  syncStatus,
   onSubmit,
 }: {
+  context?: 'post-snapshot' | 'home' | 'explore'
   snapshotId?: string
   existingFeedback?: SightlyState['betaFeedback'][number]
+  syncStatus?: SyncStatus
   onSubmit?: (snapshotId: string, believabilityRating: 1 | 2 | 3 | 4 | 5, comment: string, tags: BetaFeedbackTag[]) => void
 }) {
   const [rating, setRating] = useState<1 | 2 | 3 | 4 | 5 | null>(existingFeedback?.believabilityRating ?? null)
   const [comment, setComment] = useState(existingFeedback?.comment ?? '')
   const [tags, setTags] = useState<BetaFeedbackTag[]>(existingFeedback?.tags ?? [])
   const [saved, setSaved] = useState(Boolean(existingFeedback))
+  const feedbackCopy = context === 'post-snapshot'
+    ? 'Tell us while the result is fresh. Feedback saves locally and syncs to Supabase when available.'
+    : snapshotId
+      ? 'Stored locally on this device and synced to Supabase when available.'
+      : 'Standalone beta note card. Snapshot feedback appears after each completed snapshot.'
+  const syncLabel = syncStatus?.cloud
+    ? 'Cloud saved'
+    : syncStatus?.fallbackUsed
+      ? 'Local fallback active'
+      : syncStatus?.status
+        ? syncStatus.status.replaceAll('_', ' ')
+        : null
   const options: Array<{ value: BetaFeedbackTag; label: string }> = [
     { value: 'consistent', label: 'consistent' },
     { value: 'surprising', label: 'surprising' },
@@ -1389,7 +1449,8 @@ function BetaFeedbackCard({
       <div>
         <p className="section-kicker">Beta Feedback</p>
         <h2>Was this result believable?</h2>
-        <p>Stored locally on this device for beta validation.</p>
+        <p>{feedbackCopy}</p>
+        {syncLabel && <p className="feedback-sync-note">{syncLabel}</p>}
       </div>
       <div className="beta-rating-row" aria-label="Believability rating from 1 to 5">
         {[1, 2, 3, 4, 5].map((value) => (
@@ -1469,7 +1530,7 @@ function ExploreScreen({ checks, startTool }: { checks: SightlyState['checks']; 
           ))}
         </div>
       </section>
-      <BetaFeedbackCard />
+      <BetaFeedbackCard context="explore" />
     </div>
   )
 }
@@ -1555,6 +1616,7 @@ function SettingsScreen({
         </section>
       )}
       <div className="settings-actions">
+        <button className="glass-button quiet" onClick={openBetaDiagnostics}>Open Beta Diagnostics</button>
         <button className="glass-button" onClick={restoreDemo}>Restore Demo Baseline</button>
         <button className="glass-button quiet" onClick={resetToFreshBaseline}>Reset to Fresh Baseline</button>
       </div>
@@ -1562,13 +1624,46 @@ function SettingsScreen({
   )
 }
 
-function BetaDiagnosticsScreen({ state, onBack }: { state: SightlyState; onBack: () => void }) {
+type InternalSyncDebugEntry = {
+  target: 'profile' | 'snapshot' | 'feedback'
+  updatedAt?: string
+  supabaseConfigured?: boolean
+  isAuthenticated?: boolean
+  fallbackUsed?: boolean
+  policyFailure?: boolean
+  exactSupabaseError?: string
+  errorCode?: string
+}
+
+function loadInternalSyncDebugEntries(): InternalSyncDebugEntry[] {
+  const keys: Array<{ target: InternalSyncDebugEntry['target']; key: string }> = [
+    { target: 'profile', key: 'sightly-profile-sync-debug' },
+    { target: 'snapshot', key: 'sightly-snapshot-sync-debug' },
+    { target: 'feedback', key: 'sightly-feedback-sync-debug' },
+  ]
+  return keys.flatMap(({ target, key }) => {
+    try {
+      const stored = sessionStorage.getItem(key)
+      if (!stored) return []
+      const parsed = JSON.parse(stored) as Omit<InternalSyncDebugEntry, 'target'>
+      return [{ ...parsed, target }]
+    } catch {
+      return []
+    }
+  })
+}
+
+function BetaDiagnosticsScreen({ state, syncStatus, onBack }: { state: SightlyState; syncStatus: SyncStatus; onBack: () => void }) {
+  const syncDebugEntries = loadInternalSyncDebugEntries()
   const checks = state.checks.slice().reverse()
+  const recentFeedback = state.betaFeedback.slice().reverse().slice(0, 5)
+
   const metricRows: Array<[string, string | number]> = [
     ['Calibration completion', `${state.betaSuccessMetrics.calibrationCompletionRate}%`],
+    ['Snapshot variance', state.betaSuccessMetrics.averageVariance ?? '—'],
+    ['Confidence average', state.betaSuccessMetrics.averageConfidence ? `${state.betaSuccessMetrics.averageConfidence}%` : '—'],
+    ['Calibration consistency', state.baselineCalibration.consistency],
     ['Monthly return', `${state.betaSuccessMetrics.monthlyReturnRate}%`],
-    ['Average variance', state.betaSuccessMetrics.averageVariance ?? '—'],
-    ['Average confidence', state.betaSuccessMetrics.averageConfidence ? `${state.betaSuccessMetrics.averageConfidence}%` : '—'],
     ['Snapshot completion', `${state.betaSuccessMetrics.snapshotCompletionRate}%`],
     ['Avg session', state.betaSuccessMetrics.averageSessionDurationMs ? `${Math.round(state.betaSuccessMetrics.averageSessionDurationMs / 1000)}s` : '—'],
     ['Believability', state.betaSuccessMetrics.feedbackBelievabilityScore ?? '—'],
@@ -1584,6 +1679,56 @@ function BetaDiagnosticsScreen({ state, onBack }: { state: SightlyState; onBack:
       <section className="beta-debug-grid glass-card" aria-label="Beta success metrics">
         {metricRows.map(([label, value]) => <Metric key={label} label={label} value={value} />)}
       </section>
+
+      <section className="beta-debug-list" aria-label="Recent feedback sync status">
+        <article className="beta-debug-card glass-card">
+          <div className="beta-debug-card-head">
+            <div>
+              <p className="eyebrow">Recent Feedback</p>
+              <h2>Local / cloud status</h2>
+            </div>
+            <strong>{syncStatus?.target === 'feedback' ? (syncStatus.cloud ? 'cloud saved' : 'local fallback') : 'idle'}</strong>
+          </div>
+          {recentFeedback.length ? (
+            <div className="raw-score-list feedback-status-list">
+              {recentFeedback.map((feedback) => (
+                <div key={`${feedback.snapshotId}-${feedback.createdAt}`}>
+                  <span>{new Date(feedback.createdAt).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</span>
+                  <b>{feedback.believabilityRating}/5 · local saved{syncStatus?.target === 'feedback' && syncStatus.cloud ? ' · cloud saved' : syncStatus?.target === 'feedback' && syncStatus.fallbackUsed ? ' · local fallback' : ''}</b>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="debug-muted">No beta feedback saved on this device yet.</p>
+          )}
+        </article>
+      </section>
+
+      <section className="beta-debug-list" aria-label="Supabase sync diagnostics">
+        <article className="beta-debug-card glass-card">
+          <div className="beta-debug-card-head">
+            <div>
+              <p className="eyebrow">Supabase Logging</p>
+              <h2>Recent local/cloud attempts</h2>
+            </div>
+            <strong>{syncStatus?.cloud ? 'cloud' : syncStatus?.fallbackUsed ? 'fallback' : 'waiting'}</strong>
+          </div>
+          {syncDebugEntries.length ? (
+            <div className="raw-score-list feedback-status-list">
+              {syncDebugEntries.map((entry) => (
+                <div key={`${entry.target}-${entry.updatedAt ?? 'pending'}`}>
+                  <span>{entry.target}</span>
+                  <b>{entry.fallbackUsed ? 'local fallback' : 'cloud saved'} · {entry.supabaseConfigured ? 'configured' : 'unconfigured'}{entry.policyFailure ? ' · policy check' : ''}</b>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="debug-muted">No Supabase sync attempt recorded in this browser session yet.</p>
+          )}
+          {syncStatus?.errorMessage && <p className="debug-muted">Last sync detail: {syncStatus.errorMessage}</p>}
+        </article>
+      </section>
+
       <section className="beta-debug-list" aria-label="Snapshot history diagnostics">
         {checks.map((check) => {
           const primary = check.testResults[0]
@@ -1873,9 +2018,12 @@ function PeripheralAwarenessTest({
   const [stimulusVisible, setStimulusVisible] = useState(false)
   const [canAnswer, setCanAnswer] = useState(false)
   const answerOpenRef = useRef(false)
+  const revealTimerRef = useRef<number | null>(null)
+  const hideTimerRef = useRef<number | null>(null)
   const [roundStartedAt, setRoundStartedAt] = useState(() => performance.now())
   const [trials, setTrials] = useState<PeripheralTrial[]>([])
   const [feedback, setFeedback] = useState('')
+  const [roundReplayCount, setRoundReplayCount] = useState(0)
 
   const profile = peripheralDifficulty[difficultyIndex]
   const currentPosition = peripheralPosition(direction, profile.eccentricity)
@@ -1895,16 +2043,21 @@ function PeripheralAwarenessTest({
       answerOpenRef.current = true
     }, 360)
     const hideTimer = window.setTimeout(() => setStimulusVisible(false), 360 + profile.duration)
+    revealTimerRef.current = revealTimer
+    hideTimerRef.current = hideTimer
     return () => {
       answerOpenRef.current = false
       window.clearTimeout(revealTimer)
       window.clearTimeout(hideTimer)
+      revealTimerRef.current = null
+      hideTimerRef.current = null
     }
   }, [started, direction, profile.duration])
 
   function finish(nextTrials: PeripheralTrial[], forcedLowConfidence = false) {
     const correct = nextTrials.filter((trial) => trial.correct)
     const misses = nextTrials.filter((trial) => trial.selectedDirection === 'miss').length
+    const replayedTrials = nextTrials.filter((trial) => trial.replayed).length
     const accuracy = Math.round((correct.length / nextTrials.length) * 100)
     const missRate = Math.round((misses / nextTrials.length) * 100)
     const answeredTimes = nextTrials.filter((trial) => trial.selectedDirection !== 'miss').map((trial) => trial.responseTimeMs)
@@ -1923,7 +2076,7 @@ function PeripheralAwarenessTest({
     const finalReversals = countResultReversals(nextTrials)
     const thresholdScore = Math.max(0, Math.min(100, Math.round(estimatedThreshold * 8.4)))
     const score = Math.max(0, Math.min(100, Math.round(thresholdScore * 0.74 + accuracy * 0.22 - missRate * 0.08 + consistency * 0.04)))
-    const confidence = forcedLowConfidence ? 55 : Math.max(72, Math.min(98, Math.round(64 + nextTrials.length * 2.3 + finalReversals * 5 + (lastPassedDifficulty !== null && firstFailedDifficulty !== null ? 10 : 0) - misses)))
+    const confidence = forcedLowConfidence ? 55 : Math.max(72, Math.min(98, Math.round(64 + nextTrials.length * 2.3 + finalReversals * 5 + (lastPassedDifficulty !== null && firstFailedDifficulty !== null ? 10 : 0) - misses - replayedTrials * 2)))
     const conditions = captureTestConditions()
     const payload: PeripheralAwarenessPayload = {
       testType: 'peripheral_awareness',
@@ -1943,6 +2096,7 @@ function PeripheralAwarenessTest({
       timestamp: conditions.dateTime,
       edgeAccuracy: accuracy,
       consistency,
+      replayedTrials,
       trials: nextTrials,
     }
 
@@ -1972,6 +2126,8 @@ function PeripheralAwarenessTest({
       difficulty: profile.difficulty,
       correct,
       responseTimeMs,
+      replayed: roundReplayCount > 0,
+      replayCount: roundReplayCount,
     }
     const nextTrials = [...trials, trial]
     const thresholdFound = thresholdReady(nextTrials, PERIPHERAL_MIN_TRIALS, PERIPHERAL_TARGET_REVERSALS)
@@ -1984,8 +2140,25 @@ function PeripheralAwarenessTest({
 
     setTrials(nextTrials)
     setFeedback(correct ? 'Finding your threshold.' : 'Adjusting the next round.')
+    setRoundReplayCount(0)
     setDifficultyIndex((current) => correct ? Math.min(current + 1, peripheralDifficulty.length - 1) : Math.max(current - 1, 0))
     setDirection(randomPeripheralDirection(direction))
+  }
+
+  function replayCue() {
+    if (!started) return
+    answerOpenRef.current = true
+    setCanAnswer(true)
+    setStimulusVisible(false)
+    if (revealTimerRef.current !== null) window.clearTimeout(revealTimerRef.current)
+    if (hideTimerRef.current !== null) window.clearTimeout(hideTimerRef.current)
+    setRoundReplayCount((count) => count + 1)
+    setFeedback('Replay shown. Answer this round when ready.')
+    revealTimerRef.current = window.setTimeout(() => {
+      setRoundStartedAt(performance.now())
+      setStimulusVisible(true)
+      hideTimerRef.current = window.setTimeout(() => setStimulusVisible(false), profile.duration)
+    }, 220)
   }
 
   if (!started) {
@@ -2032,17 +2205,18 @@ function PeripheralAwarenessTest({
         )}
       </section>
       <h2>Where did the dot appear?</h2>
-      <p>Keep your eyes centered. One dot appears each round.</p>
+      <p>Keep your eyes centered. If you miss the cue, replay it instead of guessing.</p>
       <div className="peripheral-location-grid spatial-pad" aria-label="Choose where the dot appeared">
         {peripheralAnswerOptions.map((option) => (
           <button className={`glass-button peripheral-choice peripheral-${option.value}`} disabled={!canAnswer} key={option.value} onClick={(event) => recordTap(option.value, event.timeStamp)}>{option.label}</button>
         ))}
       </div>
+      <button className="glass-button quiet replay-cue-button" onClick={replayCue}>I missed it — show again</button>
       {feedback && <p className="sharpness-feedback peripheral-feedback">{feedback}</p>}
       <div className="sharpness-stats">
         <span>Trials: {trials.length}</span>
         <span>Cue: {profile.duration}ms</span>
-        <span>Confidence: {confidencePreview}%</span>
+        <span>Replays: {roundReplayCount}</span>
       </div>
       <p className="calm-note">Personal baseline only — best compared month-to-month on this device.</p>
     </div>
@@ -2454,15 +2628,15 @@ function ContrastThresholdTest({
         <div className={`landolt-ring gap-${direction}`} style={{ '--ring-contrast': contrast / 100 } as CSSProperties & Record<'--ring-contrast', number>} aria-label="Landolt C ring" />
       </section>
       <h2>Where is the opening?</h2>
-      <p>Choose where the ring opens. If you cannot see it, use Not visible.</p>
+      <p>Choose where the ring opens. If you cannot see it, tap Not visible.</p>
       {feedback && <p className="sharpness-feedback contrast-feedback">{feedback}</p>}
-      <div className="direction-pad" aria-label="Opening direction answers">
+      <div className="direction-pad contrast-answer-grid" aria-label="Opening direction answers">
         <button className="glass-button direction top" onClick={() => answer('top')}>Top</button>
         <button className="glass-button direction left" onClick={() => answer('left')}>Left</button>
         <button className="glass-button direction right" onClick={() => answer('right')}>Right</button>
         <button className="glass-button direction bottom" onClick={() => answer('bottom')}>Bottom</button>
+        <button className="glass-button direction not-visible-button" onClick={() => answer('miss')}>Not visible</button>
       </div>
-      <button className="glass-button quiet not-visible-button" onClick={() => answer('miss')}>Not visible</button>
       <div className="sharpness-stats">
         <span>Accuracy: {trials.length ? Math.round((correctTrials.length / trials.length) * 100) : '—'}%</span>
         <span>Confidence: {confidencePreview}%</span>
@@ -2502,9 +2676,32 @@ function SharpnessThresholdTest({
   const [attempts, setAttempts] = useState<SharpnessRowAttempt[]>([])
   const [roundStartedAt, setRoundStartedAt] = useState(() => performance.now())
   const [feedback, setFeedback] = useState('')
+  const letterRowRef = useRef<HTMLDivElement | null>(null)
+  const [debugFontSize, setDebugFontSize] = useState('pending')
 
   const fontSize = sharpnessFontSizes[rowIndex]
   const progress = Math.round(((rowIndex + 1) / SHARPNESS_MAX_ROWS) * 100)
+
+  useEffect(() => {
+    const target = letterRowRef.current
+    if (!target) return undefined
+
+    const measure = () => {
+      const computed = getComputedStyle(target).fontSize
+      const rendered = `${Math.round(target.getBoundingClientRect().height * 100) / 100}px`
+      setDebugFontSize(`${computed} / rendered ${rendered}`)
+    }
+
+    measure()
+    const frame = window.requestAnimationFrame(measure)
+    const observer = new ResizeObserver(measure)
+    observer.observe(target)
+
+    return () => {
+      window.cancelAnimationFrame(frame)
+      observer.disconnect()
+    }
+  }, [fontSize, letters])
   function submitRow() {
     const typedAnswer = normalizeAnswer(answer)
     const correctCount = letters.split('').reduce((count, letter, index) => count + (typedAnswer[index] === letter ? 1 : 0), 0)
@@ -2595,7 +2792,17 @@ function SharpnessThresholdTest({
       </div>
       <section className="sharpness-row-stage glass-card">
         <p className="eyebrow">Row {rowIndex + 1} · {fontSize}px</p>
-        <div className="letter-row" style={{ fontSize }}>{letters.split('').join(' ')}</div>
+        <div
+          className="letter-row"
+          data-intended-font-size={`${fontSize}px`}
+          ref={letterRowRef}
+          style={{ fontSize: `${fontSize}px` }}
+        >
+          {letters.split('').join(' ')}
+        </div>
+        <p className="sharpness-debug-readout" aria-live="polite">
+          Debug · row {rowIndex + 1} · intended {fontSize}px · computed {debugFontSize}
+        </p>
       </section>
       <label className="sharpness-answer">
         <span>Enter the 6 letters above.</span>

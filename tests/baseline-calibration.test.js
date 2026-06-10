@@ -11,7 +11,7 @@ test('baseline calibration requires three snapshots spaced at least twelve hours
   assert.match(app, /CALIBRATION_MIN_INTERVAL_MS\s*=\s*12 \* 60 \* 60 \* 1000/)
   assert.match(app, /nextCalibrationSnapshotAt/)
   assert.match(app, /baselineCtaDisabled/)
-  assert.match(app, /Complete Snapshot 2 when available/)
+  assert.match(app, /Snapshot \$\{nextSnapshotNumber\} unlocks in \$\{nextSnapshotLabel\}/)
 })
 
 test('pre-baseline home explains Sightly and baseline before showing progress', () => {

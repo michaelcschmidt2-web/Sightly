@@ -39,7 +39,7 @@ test('baseline snapshots enforce the 12-hour calibration lockout in UI and begin
   assert.match(app, /CALIBRATION_MIN_INTERVAL_MS = 12 \* 60 \* 60 \* 1000/)
   assert.match(app, /baselineCtaDisabled/)
   assert.match(app, /if \(baselineCtaDisabled\) return/)
-  assert.match(app, /Complete Snapshot 2 when available/)
+  assert.match(app, /Snapshot \$\{nextSnapshotNumber\} unlocks in \$\{nextSnapshotLabel\}/)
 })
 
 test('standalone explore tests are isolated from baseline, snapshots, and vision score', () => {

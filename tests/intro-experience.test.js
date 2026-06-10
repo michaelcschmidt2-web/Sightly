@@ -41,8 +41,11 @@ test('first-run setup is consolidated into one profile screen and one baseline r
   assert.match(onboarding, /Vision correction today/)
   assert.match(onboarding, /<p className="eyebrow">Build Your Baseline<\/p>/)
   assert.match(onboarding, /Snapshot 1 of 3/)
+  assert.match(onboarding, /Snapshot Ready/)
+  assert.match(onboarding, /Preparation checklist complete/)
   assert.match(onboarding, /Three snapshots help Sightly learn what is normal for you\./)
-  assert.match(onboarding, /Start First Snapshot/)
+  assert.match(onboarding, /Start Snapshot 1/)
+  assert.doesNotMatch(onboarding, /Ready now|Start First Snapshot/)
   assert.doesNotMatch(onboarding, /step === 3|step === 4|Begin Snapshot/)
 })
 

@@ -15,7 +15,9 @@ test('completed monthly snapshots route to a Snapshot Complete screen before Hom
   assert.match(app, /Snapshot \{snapshotNumber\} of 3 complete/)
   assert.match(app, /Sightly is learning your normal visual range\./)
   assert.match(app, /Your Vision Score unlocks after 3 baseline snapshots\./)
-  assert.match(app, /View Home/)
+  assert.match(app, /context="post-snapshot"/)
+  assert.match(app, /syncStatus=\{syncStatus\?\.target === 'feedback' \? syncStatus : null\}/)
+  assert.match(app, /Continue to Home/)
 })
 
 test('snapshot complete screen shows early measurements but withholds Vision Score until baseline unlocks', () => {
