@@ -66,3 +66,12 @@ test('mobile UI avoids red alarm treatment in beta surfaces', () => {
   assert.doesNotMatch(css, /rgb\(\s*255\s*,\s*0\s*,\s*0\s*\)/)
   assert.doesNotMatch(css, /\b(alert|error|danger)-red\b/)
 })
+
+test('selected states use shared calm amber glass treatment with reduced-motion support', () => {
+  assert.match(css, /--selected-amber:\s*rgba\(236, 174, 79, 0\.72\)/)
+  assert.match(css, /\.is-selected,\s*\n\.option-selected,\s*\n\.btn-selected/)
+  assert.match(css, /button\.selected[\s\S]*border-color:\s*rgba\(236, 174, 79, \.5\)/)
+  assert.match(css, /button\.selected[\s\S]*selectedAuraWave 7s ease-in-out infinite/)
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*animation:\s*none/)
+  assert.match(css, /\.contrast-answer-grid \.direction:active[\s\S]*rgba\(236, 174, 79, \.42\)/)
+})

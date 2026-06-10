@@ -11,6 +11,9 @@
   --glass: rgba(255, 255, 255, 0.62);
   --glass-strong: rgba(255, 255, 255, 0.78);
   --shadow: 0 30px 80px rgba(88, 111, 148, 0.22), inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  --selected-amber: rgba(236, 174, 79, 0.72);
+  --selected-amber-soft: rgba(245, 196, 112, 0.28);
+  --selected-amber-aura: rgba(246, 204, 128, 0.18);
 }
 
 * { box-sizing: border-box; }
@@ -65,6 +68,74 @@ button { font: inherit; min-height: 44px; touch-action: manipulation; -webkit-ta
   border: 1px solid rgba(255,255,255,0.8);
   box-shadow: var(--shadow), inset 0 -18px 42px rgba(163, 190, 224, 0.08);
   backdrop-filter: blur(22px) saturate(1.35);
+}
+
+.is-selected,
+.option-selected,
+.btn-selected,
+button.selected,
+.eye-mode-picker button.active,
+.bottom-nav button.active,
+[aria-pressed="true"] {
+  position: relative;
+  isolation: isolate;
+  color: var(--ink);
+  border-color: rgba(236, 174, 79, .5);
+  background:
+    radial-gradient(circle at 18% 0%, var(--selected-amber-aura), transparent 46%),
+    linear-gradient(145deg, rgba(255,255,255,.92), rgba(255,246,228,.58) 54%, rgba(231,242,255,.46));
+  box-shadow:
+    0 0 0 1px rgba(236, 174, 79, .42),
+    0 0 18px rgba(245, 196, 112, .16),
+    inset 0 1px 0 rgba(255,255,255,.94),
+    inset 0 -12px 28px rgba(245, 196, 112, .12);
+}
+
+.is-selected::after,
+.option-selected::after,
+.btn-selected::after,
+button.selected::after,
+.eye-mode-picker button.active::after,
+.bottom-nav button.active::after,
+[aria-pressed="true"]::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  z-index: 0;
+  opacity: .55;
+  mix-blend-mode: screen;
+  background: linear-gradient(112deg, transparent 12%, rgba(255, 242, 213, .18) 34%, rgba(236, 174, 79, .2) 50%, transparent 72%);
+  background-size: 220% 100%;
+  animation: selectedAuraWave 7s ease-in-out infinite;
+}
+
+.glass-button.direction:active,
+.peripheral-choice:active,
+.direction-choice:active {
+  color: var(--ink);
+  box-shadow:
+    0 0 0 1px rgba(236, 174, 79, .34),
+    0 0 16px rgba(245, 196, 112, .14),
+    inset 0 1px 0 rgba(255,255,255,.92);
+}
+
+@keyframes selectedAuraWave {
+  0%, 100% { background-position: 115% 50%; opacity: .42; }
+  50% { background-position: -15% 50%; opacity: .62; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .is-selected::after,
+  .option-selected::after,
+  .btn-selected::after,
+  button.selected::after,
+  .eye-mode-picker button.active::after,
+  .bottom-nav button.active::after,
+  [aria-pressed="true"]::after {
+    animation: none;
+  }
 }
 
 .top-header { padding: 12px 4px 6px; }
@@ -3860,4 +3931,52 @@ dl {
 .contrast-screen .sharpness-stats,
 .contrast-screen .calm-note {
   display: none;
+}
+
+/* Selected state polish: calm amber trim/aura without layout shift or harsh shadows. */
+.setup-grid button.selected,
+.setup-list button.selected,
+.choice-grid button.selected,
+.eye-mode-picker button.active,
+.bottom-nav button.active,
+.beta-rating-row button.selected,
+.beta-feedback-tags button.selected,
+.beta-rating-row button[aria-pressed="true"] {
+  color: var(--ink);
+  border-color: rgba(236, 174, 79, .5);
+  background:
+    radial-gradient(circle at 18% 0%, var(--selected-amber-aura), transparent 46%),
+    linear-gradient(145deg, rgba(255,255,255,.92), rgba(255,246,228,.58) 54%, rgba(231,242,255,.46));
+  box-shadow:
+    0 0 0 1px rgba(236, 174, 79, .42),
+    0 0 18px rgba(245, 196, 112, .16),
+    inset 0 1px 0 rgba(255,255,255,.94),
+    inset 0 -12px 28px rgba(245, 196, 112, .12);
+}
+
+.setup-grid button.selected::after,
+.setup-list button.selected::after,
+.choice-grid button.selected::after,
+.eye-mode-picker button.active::after,
+.bottom-nav button.active::after,
+.beta-rating-row button.selected::after,
+.beta-feedback-tags button.selected::after,
+.beta-rating-row button[aria-pressed="true"]::after {
+  z-index: 0;
+  opacity: .42;
+  mix-blend-mode: screen;
+}
+
+.contrast-answer-grid .direction:active,
+.peripheral-location-grid .peripheral-choice:active,
+.visual-direction-pad .direction-choice:active {
+  color: var(--ink);
+  border-color: rgba(236, 174, 79, .42);
+  background:
+    radial-gradient(circle at 18% 0%, rgba(246,204,128,.14), transparent 46%),
+    linear-gradient(145deg, rgba(255,255,255,.9), rgba(255,246,228,.5));
+  box-shadow:
+    0 0 0 1px rgba(236, 174, 79, .34),
+    0 0 14px rgba(245, 196, 112, .13),
+    inset 0 1px 0 rgba(255,255,255,.92);
 }
