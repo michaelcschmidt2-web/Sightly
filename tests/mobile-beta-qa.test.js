@@ -53,6 +53,25 @@ test('contrast test uses a flat high-readability field and no cramped directiona
   assert.match(css, /@media \(max-width:\s*380px\)[\s\S]*\.direction-pad \.direction[\s\S]*min-height:\s*52px/)
 })
 
+test('contrast stimulus stays isolated below HUD labels for all Landolt orientations', () => {
+  assert.match(app, /const contrastDirections: ContrastDirection\[\] = \['top', 'right', 'bottom', 'left'\]/)
+  assert.match(app, /className="contrast-hud"/)
+  assert.match(app, /className="contrast-stimulus-layer"/)
+  assert.match(app, /className=\{`landolt-ring gap-\$\{direction\}`\}/)
+  assert.match(css, /\.contrast-stage\.glass-card\s*\{[\s\S]*grid-template-rows:\s*auto minmax\(0, 1fr\)/)
+  assert.match(css, /\.contrast-stage\.glass-card\s*\{[\s\S]*isolation:\s*isolate/)
+  assert.match(css, /\.contrast-hud\s*\{[\s\S]*z-index:\s*3/)
+  assert.match(css, /\.contrast-stimulus-layer\s*\{[\s\S]*z-index:\s*1/)
+  assert.match(css, /\.contrast-stimulus-layer\s*\{[\s\S]*overflow:\s*hidden/)
+  assert.match(css, /\.contrast-stimulus-layer\s*\{[\s\S]*min-height:\s*clamp\(150px, 24svh, 190px\)/)
+  assert.match(css, /\.landolt-ring\s*\{[\s\S]*z-index:\s*1/)
+  assert.match(css, /\.landolt-ring\.gap-top::after/)
+  assert.match(css, /\.landolt-ring\.gap-right::after/)
+  assert.match(css, /\.landolt-ring\.gap-bottom::after/)
+  assert.match(css, /\.landolt-ring\.gap-left::after/)
+  assert.doesNotMatch(css, /Final Dan feedback override[\s\S]*min-height:\s*clamp\(92px, 18svh, 132px\)/)
+})
+
 test('beta feedback placeholder asks whether the result was believable without submitting externally', () => {
   assert.match(app, /function BetaFeedbackCard/)
   assert.match(app, /Was this result believable\?/)

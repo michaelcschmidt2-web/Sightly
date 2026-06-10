@@ -2629,9 +2629,14 @@ function ContrastThresholdTest({
       <div className="difficulty-track contrast-track" aria-label={`Threshold confidence ${confidencePreview}%`}>
         <span style={{ width: `${progress}%` }} />
       </div>
-      <section className="contrast-stage glass-card">
-        <p className="eyebrow">Round {trials.length + 1} · {contrast}% contrast</p>
-        <div className={`landolt-ring gap-${direction}`} style={{ '--ring-contrast': contrast / 100 } as CSSProperties & Record<'--ring-contrast', number>} aria-label="Landolt C ring" />
+      <section className="contrast-stage glass-card" aria-label="Contrast stimulus">
+        <div className="contrast-hud" aria-label={`Round ${trials.length + 1}, ${contrast}% contrast`}>
+          <span>Round {trials.length + 1}</span>
+          <span>{contrast}% contrast</span>
+        </div>
+        <div className="contrast-stimulus-layer" aria-label="Landolt C stimulus safe area">
+          <div className={`landolt-ring gap-${direction}`} style={{ '--ring-contrast': contrast / 100 } as CSSProperties & Record<'--ring-contrast', number>} aria-label="Landolt C ring" />
+        </div>
       </section>
       <h2>Where is the opening?</h2>
       <p>Choose where the ring opens. If you cannot see it, tap Not visible.</p>

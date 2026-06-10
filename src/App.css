@@ -499,17 +499,50 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
   margin: 6px 0 12px;
   border-radius: 30px;
   display: grid;
-  align-content: center;
+  grid-template-rows: auto minmax(0, 1fr);
+  align-items: stretch;
   justify-items: center;
-  gap: 14px;
-  padding: 18px 14px;
+  gap: 10px;
+  padding: 14px 14px 16px;
   position: relative;
+  isolation: isolate;
   overflow: hidden;
   background: #f7f8fb;
   border-color: rgba(20, 24, 32, .08);
   box-shadow: none;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+.contrast-hud {
+  position: relative;
+  z-index: 3;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: rgba(23,32,44,.48);
+  font-size: 11px;
+  line-height: 1.12;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  pointer-events: none;
+}
+.contrast-hud span {
+  white-space: nowrap;
+}
+.contrast-stimulus-layer {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-height: clamp(150px, 24svh, 190px);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 24px;
+  padding: 32px max(34px, 10vw);
+  pointer-events: none;
 }
 .contrast-mist { display: none; }
 .landolt-ring { --ring-contrast: 1; width: clamp(96px, 30vw, 118px); height: clamp(96px, 30vw, 118px); border-radius: 999px; border: clamp(16px, 5vw, 20px) solid rgba(16, 24, 39, var(--ring-contrast)); position: relative; z-index: 1; box-shadow: none; animation: ringFadeIn .12s linear; transition: none; }
@@ -560,17 +593,22 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
 .peripheral-location-grid::before { content: 'Center'; grid-area: center; min-height: 54px; border-radius: 22px; display: flex; align-items: center; justify-content: center; color: rgba(23,32,44,.42); font-weight: 760; background: rgba(255,255,255,.34); border: 1px dashed rgba(83,105,142,.2); }
 .replay-cue-button { width: 100%; min-height: 52px; border-radius: 22px; margin-top: 2px; }
 
-/* Dan feedback pass: keep the contrast miss escape visible in compact phone previews. */
+/* Dan feedback pass: keep the contrast miss escape visible while preserving stimulus/HUD separation. */
 .contrast-screen .contrast-stage.glass-card {
-  min-height: clamp(92px, 18svh, 132px);
+  min-height: clamp(184px, 30svh, 224px);
   margin: 0 0 4px;
-  gap: 4px;
-  padding: 8px 12px;
+  gap: 8px;
+  padding: 10px 12px 12px;
 }
 
-.contrast-screen .contrast-stage .eyebrow {
+.contrast-screen .contrast-hud {
   font-size: 10px;
   line-height: 1.08;
+}
+
+.contrast-screen .contrast-stimulus-layer {
+  min-height: clamp(138px, 22svh, 176px);
+  padding-block: 30px;
 }
 
 .contrast-screen .landolt-ring {
@@ -3899,17 +3937,22 @@ dl {
   overflow-wrap: anywhere;
 }
 
-/* Final Dan feedback override: later global compact rules must not hide the Not visible answer. */
+/* Final contrast integrity override: later compact rules must preserve HUD/stimulus separation and Not visible reachability. */
 .contrast-screen .contrast-stage.glass-card {
-  min-height: clamp(92px, 18svh, 132px);
+  min-height: clamp(184px, 30svh, 224px);
   margin: 0 0 4px;
-  gap: 4px;
-  padding: 8px 12px;
+  gap: 8px;
+  padding: 10px 12px 12px;
 }
 
-.contrast-screen .contrast-stage .eyebrow {
+.contrast-screen .contrast-hud {
   font-size: 10px;
   line-height: 1.08;
+}
+
+.contrast-screen .contrast-stimulus-layer {
+  min-height: clamp(138px, 22svh, 176px);
+  padding-block: 30px;
 }
 
 .contrast-screen .landolt-ring {
