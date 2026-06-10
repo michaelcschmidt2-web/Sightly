@@ -535,13 +535,15 @@ dd { margin: 0; color: rgba(23,32,44,.72); font-weight: 700; font-size: 13px; }
 .contrast-stimulus-layer {
   position: relative;
   z-index: 1;
-  width: 100%;
+  box-sizing: border-box;
+  inline-size: 100%;
+  max-inline-size: 100%;
   min-height: clamp(150px, 24svh, 190px);
   display: grid;
   place-items: center;
   overflow: hidden;
   border-radius: 24px;
-  padding: 32px max(34px, 10vw);
+  padding: 32px clamp(30px, 10%, 44px);
   pointer-events: none;
 }
 .contrast-mist { display: none; }
