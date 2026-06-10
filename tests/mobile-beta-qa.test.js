@@ -67,11 +67,16 @@ test('mobile UI avoids red alarm treatment in beta surfaces', () => {
   assert.doesNotMatch(css, /\b(alert|error|danger)-red\b/)
 })
 
-test('selected states use shared calm amber glass treatment with reduced-motion support', () => {
-  assert.match(css, /--selected-amber:\s*rgba\(236, 174, 79, 0\.72\)/)
+test('selected states use shared neutral glass with behind-button amber aura and reduced-motion support', () => {
+  assert.match(css, /--selected-amber:\s*rgba\(245, 166, 72, 0\.38\)/)
   assert.match(css, /\.is-selected,\s*\n\.option-selected,\s*\n\.btn-selected/)
-  assert.match(css, /button\.selected[\s\S]*border-color:\s*rgba\(236, 174, 79, \.5\)/)
-  assert.match(css, /button\.selected[\s\S]*selectedAuraWave 7s ease-in-out infinite/)
-  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*animation:\s*none/)
-  assert.match(css, /\.contrast-answer-grid \.direction:active[\s\S]*rgba\(236, 174, 79, \.42\)/)
+  assert.match(css, /button\.selected[\s\S]*background:\s*rgba\(255,255,255,\.48\)/)
+  assert.match(css, /button\.selected[\s\S]*box-shadow:[\s\S]*rgba\(245, 166, 72, \.16\)/)
+  assert.match(css, /button\.selected::before[\s\S]*inset:\s*-8px/)
+  assert.match(css, /button\.selected::before[\s\S]*filter:\s*blur\(12px\)/)
+  assert.match(css, /button\.selected::before[\s\S]*animation:\s*selectedAuraDrift 9s ease-in-out infinite alternate/)
+  assert.match(css, /@media \(prefers-reduced-motion:\s*reduce\)[\s\S]*button\.selected::before[\s\S]*animation:\s*none/)
+  assert.doesNotMatch(css, /button\.selected[\s\S]{0,260}rgba\(255,246,228/)
+  assert.doesNotMatch(css, /button\.selected[\s\S]{0,260}rgba\(236, 174, 79, \.5\)/)
+  assert.match(css, /\.contrast-answer-grid \.direction:active[\s\S]*background:\s*rgba\(255,255,255,\.5\)/)
 })
