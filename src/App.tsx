@@ -1101,6 +1101,9 @@ function SnapshotCompleteScreen({
     ?? (baselineReady
       ? 'Your baseline is ready. Future snapshots can now compare against your typical range.'
       : 'Sightly is learning your normal visual range.')
+  const preliminaryCopy = snapshotNumber === 1
+    ? 'Your score is an early estimate. Complete 3 snapshots across separate sessions to build your personal baseline.'
+    : 'One more snapshot will help Sightly confirm your normal range.'
 
   return (
     <div className="screen post-snapshot-results-screen">
@@ -1109,21 +1112,24 @@ function SnapshotCompleteScreen({
         <h1>Snapshot Complete</h1>
         {!baselineReady ? (
           <>
-            <strong>Snapshot {snapshotNumber} of 3 complete</strong>
-            <p>Sightly is learning your normal visual range.</p>
+            <p className="snapshot-score-label">Preliminary Vision Score</p>
+            <strong>{check.score ?? '—'}</strong>
+            <p>Snapshot {snapshotNumber} of 3 complete</p>
+            <p className="snapshot-preliminary-copy">{preliminaryCopy}</p>
           </>
         ) : (
           <>
             <strong>{check.score ?? '—'}</strong>
             <p>Vision Score</p>
+            <p className="snapshot-baseline-ready">Baseline Established</p>
           </>
         )}
       </header>
 
       {!baselineReady ? (
-        <section className="snapshot-complete-card glass-card" aria-label="Early Results">
-          <p className="section-kicker">Early Results</p>
-          <h2>Early snapshot results</h2>
+        <section className="snapshot-complete-card glass-card" aria-label="Preliminary Snapshot Summary">
+          <p className="section-kicker">Snapshot breakdown</p>
+          <h2>Early measurement breakdown</h2>
           <div className="snapshot-result-list">
             {visibleResults.map((result) => (
               <div key={result.id}>
@@ -1136,7 +1142,7 @@ function SnapshotCompleteScreen({
               <b>{confidenceLabel}</b>
             </div>
           </div>
-          <p className="snapshot-unlock-copy">Your Vision Score unlocks after 3 baseline snapshots.</p>
+          <p className="snapshot-unlock-copy">Baseline insights, typical range, and trend alerts stay locked until 3 snapshots are complete.</p>
         </section>
       ) : (
         <section className="snapshot-complete-card glass-card" aria-label="Snapshot Summary">

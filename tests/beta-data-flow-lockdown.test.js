@@ -50,12 +50,13 @@ test('standalone explore tests are isolated from baseline, snapshots, and vision
   assert.match(data, /resultType: 'standalone'/)
 })
 
-test('baseline unlocks only after three complete snapshot checks and pre-baseline score remains hidden', () => {
+test('baseline unlocks only after three complete snapshot checks and pre-baseline home score remains hidden', () => {
   assert.match(data, /assertCompleteSnapshotMeasurements/)
   assert.match(data, /checks\.slice\(0, 3\)/)
   assert.match(app, /baselineReady = state\.baselineCalibration\.completedSnapshots >= CALIBRATION_REQUIRED_SNAPSHOTS && Boolean\(state\.typicalRange\)/)
   assert.match(app, /latestScore = baselineReady \? latestCheck\?\.score \?\? null : null/)
   assert.match(app, /baselineReady \? 'Current Vision' : 'Welcome to Sightly'/)
+  assert.match(app, /Preliminary Vision Score/)
 })
 
 test('typical range and snapshot interpretation avoid look-ahead bias', () => {

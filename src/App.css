@@ -3042,10 +3042,21 @@ dl {
 }
 .snapshot-complete-hero strong {
   color: var(--navy);
-  font-size: clamp(26px, 8vw, 42px);
+  font-size: clamp(38px, 13vw, 62px);
   line-height: 1;
-  letter-spacing: -1.4px;
+  letter-spacing: -1.8px;
   font-weight: 540;
+}
+.snapshot-score-label,
+.snapshot-baseline-ready {
+  color: rgba(7,24,64,.62) !important;
+  font-size: 13px !important;
+  font-weight: 780;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.snapshot-preliminary-copy {
+  max-width: 30rem;
 }
 .snapshot-complete-hero p:not(.section-kicker),
 .snapshot-unlock-copy {
